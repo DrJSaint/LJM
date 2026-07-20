@@ -39,7 +39,7 @@ OUTPUT_DIR = Path("../output")
 WEEK_1_MONDAY = "2026-09-21"
 EXPECTED_WEEKS = 12
 
-EXPORT_PDF = True
+EXPORT_PDF = False
 ALLOW_WARNINGS = True
 
 BASE_NAME = "student_journey_map"
@@ -103,6 +103,12 @@ def main() -> int:
 
     export_pdf = EXPORT_PDF and not args.no_pdf
     allow_warnings = ALLOW_WARNINGS and not args.strict
+
+    if not export_pdf and pdf_path.exists():
+        try:
+            pdf_path.unlink()
+        except PermissionError:
+            info(f"PDF exists but could not be removed because it is open: {pdf_path}")
 
     info(f"Input DOCX     : {input_docx}")
     info(f"Output folder  : {output_dir}")
