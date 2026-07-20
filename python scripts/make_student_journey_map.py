@@ -89,8 +89,11 @@ def main() -> int:
     extractor_path = script_dir / EXTRACTOR_SCRIPT
     renderer_path = script_dir / RENDERER_SCRIPT
 
-    input_docx = Path(args.input).resolve()
-    output_dir = Path(args.output_dir).resolve()
+    input_arg = Path(args.input)
+    output_arg = Path(args.output_dir)
+
+    input_docx = (script_dir / input_arg).resolve() if not input_arg.is_absolute() else input_arg.resolve()
+    output_dir = (script_dir / output_arg).resolve() if not output_arg.is_absolute() else output_arg.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     review_path = output_dir / f"{args.base_name}_review.txt"

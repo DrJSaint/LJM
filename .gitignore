@@ -1,0 +1,16 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Local virtual environments
+.venv/
+venv/
+env/
+
+# Editor/system noise
+.DS_Store
+Thumbs.db
+
+# Generated renderer artifacts
+output/*
+!output/.gitkeep
