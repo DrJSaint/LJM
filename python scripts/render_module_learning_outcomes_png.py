@@ -5,15 +5,17 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Mapping
 
 from PIL import Image, ImageDraw, ImageFont
 
 DEFAULT_INPUT = "../output/student_journey_map_data.json"
 DEFAULT_OUTPUT = "../output/module_learning_outcomes.png"
-CANVAS_SIZE = 1080
+RESOLUTION_SCALE = 3  # multiplies the whole design beyond the original 1080px canvas for sharper zoom/print quality
+CANVAS_SIZE = 1080 * RESOLUTION_SCALE
 BASE_ROWS = 5
 ROW_H = CANVAS_SIZE // BASE_ROWS
+ROW_BOTTOM_PADDING = 18 * RESOLUTION_SCALE
+CODE_BASELINE_NUDGE = 2 * RESOLUTION_SCALE
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 STYLE = {
@@ -46,6 +48,18 @@ STYLE = {
 }
 
 
+def scale_style_values(obj: dict, scale: int) -> None:
+    for key, value in obj.items():
+        if isinstance(value, dict):
+            scale_style_values(value, scale)
+        elif isinstance(value, (int, float)):
+            obj[key] = int(round(value * scale))
+
+
+scale_style_values(STYLE["layout"], RESOLUTION_SCALE)
+scale_style_values(STYLE["text"], RESOLUTION_SCALE)
+
+
 def hex_to_rgba(color: str, alpha: int = 255) -> tuple[int, int, int, int]:
     color = color.lstrip("#")
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16), alpha
@@ -75,14 +89,6 @@ def load_font(size: int, names: list[str], fallback: list[str]) -> ImageFont.Ima
     if path:
         return ImageFont.truetype(str(path), size=size)
     return ImageFont.load_default()
-
-
-FONTS = {
-    "header": None,
-    "code": None,
-    "title": None,
-    "desc": None,
-}
 
 
 def build_fonts() -> dict[str, ImageFont.ImageFont]:
@@ -216,7 +222,7 @@ def render_mlos(data: dict, output_png: Path) -> list[str]:
             + title_h
             + STYLE["layout"]["row_desc_gap"]
             + desc_h
-            + 18
+            + ROW_BOTTOM_PADDING
         )
         row_h = max(ROW_H, content_h)
 
@@ -257,8 +263,7 @@ def render_mlos(data: dict, output_png: Path) -> list[str]:
         y_cursor += row_h
 
     code = module_code(data.get("module_title", "MODULE"))
-    header_text = f"Learning\nOutcomes\nFor {code}"
-    hw, hh = text_size(draw, "Learning", FONTS["header"])
+    header_text = f"Learning\nOutcomes\nfor {code}"
     lines = header_text.split("\n")
     # Use font metrics for consistent line advance across mixed glyphs.
     ascent, descent = FONTS["header"].getmetrics()
@@ -288,7 +293,7 @@ def render_mlos(data: dict, output_png: Path) -> list[str]:
         code_text = str(mlo.get("code", f"MLO{i+1}")).upper()
         cw, ch = text_size(draw, code_text, FONTS["code"])
         code_x = STYLE["layout"]["code_x"]
-        code_y = row_center - ch // 2 - 2
+        code_y = row_center - ch // 2 - CODE_BASELINE_NUDGE
         draw.text((code_x, code_y), code_text, font=FONTS["code"], fill=code_colors[i % len(code_colors)])
 
         text_x = STYLE["layout"]["text_x"]
@@ -326,17 +331,17 @@ def main() -> int:
 
     global FONTS
     if args.header_size is not None:
-        STYLE["text"]["header_size"] = max(8, args.header_size)
+        STYLE["text"]["header_size"] = max(8, args.header_size) * RESOLUTION_SCALE
     if args.code_size is not None:
-        STYLE["text"]["code_size"] = max(8, args.code_size)
+        STYLE["text"]["code_size"] = max(8, args.code_size) * RESOLUTION_SCALE
     if args.title_size is not None:
-        STYLE["text"]["title_size"] = max(8, args.title_size)
+        STYLE["text"]["title_size"] = max(8, args.title_size) * RESOLUTION_SCALE
     if args.desc_size is not None:
-        STYLE["text"]["desc_size"] = max(8, args.desc_size)
+        STYLE["text"]["desc_size"] = max(8, args.desc_size) * RESOLUTION_SCALE
     if args.line_spacing is not None:
-        STYLE["text"]["line_spacing"] = max(0, args.line_spacing)
+        STYLE["text"]["line_spacing"] = max(0, args.line_spacing) * RESOLUTION_SCALE
     if args.header_line_gap is not None:
-        STYLE["layout"]["header_line_gap"] = max(0, args.header_line_gap)
+        STYLE["layout"]["header_line_gap"] = max(0, args.header_line_gap) * RESOLUTION_SCALE
 
     FONTS = build_fonts()
 

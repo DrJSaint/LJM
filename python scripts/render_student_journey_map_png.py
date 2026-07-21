@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 from pathlib import Path
 from typing import List, Mapping, Tuple, cast
@@ -26,7 +25,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 DEFAULT_INPUT = "../output/student_journey_data.json"
 DEFAULT_OUTPUT = "../output/student_journey_map.png"
 DEFAULT_PDF = "../output/student_journey_map.pdf"
-RENDER_SCALE = 3
+RENDER_SCALE = 6
+PRINT_SCALE = 3  # multiplies the final delivered resolution beyond the 800px design width
+FINAL_DOWNSCALE = RENDER_SCALE / PRINT_SCALE
+PDF_BASE_RESOLUTION = 150.0
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CROP_TO_CONTENT = False
 STANDARD_OUTPUT_HEIGHT = 2000
@@ -36,11 +38,31 @@ FIT_FIXED_MIN_DETAIL_SIZE = 12 * RENDER_SCALE
 # Keep pills more visually stable in fixed mode; let detail absorb more pressure first.
 FIT_FIXED_MIN_PILL_SIZE = 14 * RENDER_SCALE
 FIT_FIXED_STEP = 1 * RENDER_SCALE
-HEADER_CLEARANCE = 26
-LANE_CLEARANCE = 18
 FLEX_HEADER_CLEARANCE = 40 * RENDER_SCALE
 FLEX_BOTTOM_PADDING = 20 * RENDER_SCALE
 FLEX_BOTTOM_EXTRA = 0
+
+# A handful of pixel offsets below were tuned by eye at RENDER_SCALE=3 and aren't
+# derived from STYLE, so they're re-based here to stay proportional if RENDER_SCALE changes.
+_LEGACY_RENDER_SCALE = 3
+
+
+def _legacy_scaled(value: float) -> int:
+    return round(value * RENDER_SCALE / _LEGACY_RENDER_SCALE)
+
+
+HEADER_CLEARANCE = _legacy_scaled(26)
+LANE_CLEARANCE = _legacy_scaled(18)
+TITLE_START_Y = _legacy_scaled(90)
+TITLE_SUBTITLE_GAP = _legacy_scaled(16)
+TIMELINE_TOP_OFFSET = _legacy_scaled(120)
+MIN_BLOCK_WIDTH = _legacy_scaled(320)
+BLOCK_WIDTH_DATE_PADDING = _legacy_scaled(34)
+MIN_BLOCK_HEIGHT = _legacy_scaled(145)
+TIMELINE_GAP_MIN = _legacy_scaled(72)
+TIMELINE_GAP_REDUCTION = _legacy_scaled(40)
+NODE_LABEL_Y_OFFSET = _legacy_scaled(20)
+TEXT_BASELINE_NUDGE = _legacy_scaled(2)
 
 STYLE = {
     "canvas": {
@@ -283,7 +305,7 @@ def pill_size(draw: ImageDraw.ImageDraw, text: str, max_width: int, fonts: Mappi
 def centered_text_y(draw: ImageDraw.ImageDraw, center_y: int, text: str, font: ImageFont.ImageFont) -> int:
     bbox = draw.textbbox((0, 0), text, font=font)
     text_height = int(bbox[3] - bbox[1])
-    return center_y - text_height // 2 - 2
+    return center_y - text_height // 2 - TEXT_BASELINE_NUDGE
 
 
 def compute_block_width(draw: ImageDraw.ImageDraw, weeks: list[dict], fonts: Mapping[str, ImageFont.ImageFont]) -> int:
@@ -293,7 +315,7 @@ def compute_block_width(draw: ImageDraw.ImageDraw, weeks: list[dict], fonts: Map
         w, _ = text_size(draw, label, fonts["date"])
         widest_date = max(widest_date, w)
 
-    return max(320, widest_date + 34)
+    return max(MIN_BLOCK_WIDTH, widest_date + BLOCK_WIDTH_DATE_PADDING)
 
 
 def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
@@ -314,7 +336,7 @@ def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, f
 
     lines_heights = [text_size(draw, line, fonts["pill"])[1] for line in lines]
     total_text_height = sum(lines_heights) + max(0, len(lines) - 1) * 5
-    text_y = y + max(0, (height - total_text_height) // 2) - 2
+    text_y = y + max(0, (height - total_text_height) // 2) - TEXT_BASELINE_NUDGE
     text_x = rect_x + STYLE["pill"]["padding_x"]
     for line in lines:
         _, th = text_size(draw, line, fonts["pill"])
@@ -343,14 +365,14 @@ def measure_week_block(draw: ImageDraw.ImageDraw, week: dict, block_width: int, 
 
     height += STYLE["blocks"]["date_title_gap"] + STYLE["blocks"]["title_detail_gap"]
 
-    return max(height, 145)
+    return max(height, MIN_BLOCK_HEIGHT)
 
 
 def draw_week_block(draw: ImageDraw.ImageDraw, week: dict, center_y: int, side: str, block_width: int, fonts: Mapping[str, ImageFont.ImageFont]) -> None:
     palette = STYLE["palette"]
     timeline_x = STYLE["timeline"]["x"]
     gap_from_timeline = STYLE["blocks"]["timeline_gap"]
-    left_gap_from_timeline = max(72, gap_from_timeline - 40)
+    left_gap_from_timeline = max(TIMELINE_GAP_MIN, gap_from_timeline - TIMELINE_GAP_REDUCTION)
 
     if side == "left":
         x = timeline_x - left_gap_from_timeline - block_width
@@ -375,7 +397,7 @@ def draw_week_block(draw: ImageDraw.ImageDraw, week: dict, center_y: int, side: 
 
     if week.get("render_pill") and week.get("assessment", "").strip():
         _, _, pill_height = pill_size(draw, week["assessment"], STYLE["pill"]["max_width"], fonts)
-        pill_y = center_y - pill_height // 2 - 2
+        pill_y = center_y - pill_height // 2 - TEXT_BASELINE_NUDGE
         draw_pill(draw, x, pill_y, week["assessment"], opposite_side(side), fonts)
 
 
@@ -397,13 +419,13 @@ def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highligh
     label = str(week_number)
     w, h = text_size(draw, label, active_fonts["circle"])
     label_fill = palette["accent"] if highlighted else palette["text"]
-    draw.text((x - w // 2, y - h // 2 - 20), label, font=active_fonts["circle"], fill=label_fill)
+    draw.text((x - w // 2, y - h // 2 - NODE_LABEL_Y_OFFSET), label, font=active_fonts["circle"], fill=label_fill)
 
 
 def measure_header_bottom(draw: ImageDraw.ImageDraw, data: dict, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
-    y = 90
+    y = TITLE_START_Y
     y = draw_centered_text(draw, y, data["module_title"], fonts["title"], STYLE["palette"]["text"], STYLE["canvas"]["width"])
-    y += 16
+    y += TITLE_SUBTITLE_GAP
     y = draw_centered_text(draw, y, "Learner Journey Map", fonts["subtitle"], STYLE["palette"]["text"], STYLE["canvas"]["width"])
     return y
 
@@ -439,7 +461,7 @@ def measure_week_layout(draw: ImageDraw.ImageDraw, week: dict, block_width: int,
 
 
 def compute_fixed_centers(count: int) -> list[int]:
-    top = STYLE["canvas"]["top_padding"] + 120
+    top = STYLE["canvas"]["top_padding"] + TIMELINE_TOP_OFFSET
     gap = STYLE["timeline"]["week_gap"]
     return [top + i * gap for i in range(count)]
 
@@ -449,7 +471,7 @@ def compute_flex_centers(layouts: list[dict], header_bottom: int) -> list[int]:
         return []
 
     gap = STYLE["timeline"]["week_gap"]
-    top = STYLE["canvas"]["top_padding"] + 120
+    top = STYLE["canvas"]["top_padding"] + TIMELINE_TOP_OFFSET
     first_half = max(
         STYLE["timeline"]["circle_radius"],
         layouts[0]["lane_heights"]["left"] // 2,
@@ -491,7 +513,7 @@ def compute_standard_image_height(count: int) -> int:
         return STANDARD_OUTPUT_HEIGHT * RENDER_SCALE
 
     gap = STYLE["timeline"]["week_gap"]
-    top = STYLE["canvas"]["top_padding"] + 120
+    top = STYLE["canvas"]["top_padding"] + TIMELINE_TOP_OFFSET
     bottom = STYLE["canvas"]["bottom_padding"]
     return top + (count - 1) * gap + bottom + 120
 
@@ -623,9 +645,9 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
     draw = ImageDraw.Draw(image)
     palette = STYLE["palette"]
 
-    y = 90
+    y = TITLE_START_Y
     y = draw_centered_text(draw, y, data["module_title"], FONTS["title"], palette["text"], width)
-    y += 16
+    y += TITLE_SUBTITLE_GAP
     y = draw_centered_text(draw, y, "Learner Journey Map", FONTS["subtitle"], palette["text"], width)
 
     # Main timeline line
@@ -645,8 +667,8 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
 
     final_image = image.resize(
         (
-            image.width // RENDER_SCALE,
-            image.height // RENDER_SCALE,
+            max(1, round(image.width / FINAL_DOWNSCALE)),
+            max(1, round(image.height / FINAL_DOWNSCALE)),
         ),
         Image.Resampling.LANCZOS,
     )
@@ -666,15 +688,16 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
 
     final_image.save(output_png, "PNG")
 
-    if layout_mode == "flex-height" and final_image.height > STANDARD_OUTPUT_HEIGHT:
+    standard_height = STANDARD_OUTPUT_HEIGHT * PRINT_SCALE
+    if layout_mode == "flex-height" and final_image.height > standard_height:
         warnings.append(
-            f"layout mode flex-height expanded output height to {final_image.height}px from the standard {STANDARD_OUTPUT_HEIGHT}px."
+            f"layout mode flex-height expanded output height to {final_image.height}px from the standard {standard_height}px."
         )
 
     if output_pdf:
         rgb = final_image.convert("RGB")
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
-        rgb.save(output_pdf, "PDF", resolution=150.0)
+        rgb.save(output_pdf, "PDF", resolution=PDF_BASE_RESOLUTION * PRINT_SCALE)
 
     return warnings
 

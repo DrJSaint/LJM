@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 import streamlit as st
@@ -19,7 +21,6 @@ PIPELINE_SCRIPT = REPO_ROOT / "python scripts" / "make_student_journey_map.py"
 DEFAULTS = {
     "render_target": "both",
     "layout_mode": "flex-height",
-    "output_type": "png",
     "mlo_header_size": 52,
     "mlo_code_size": 52,
     "mlo_title_size": 37,
@@ -28,7 +29,7 @@ DEFAULTS = {
     "mlo_header_line_gap": 0,
 }
 
-PDF_PAGE_BG = (247, 241, 232)
+PDF_PAGE_BG = (255, 255, 255)
 
 
 def init_state() -> None:
@@ -76,10 +77,8 @@ def build_command(input_path: Path, output_dir: Path) -> list[str]:
         st.session_state["render_target"],
         "--layout-mode",
         st.session_state["layout_mode"],
+        "--no-pdf",
     ]
-
-    if st.session_state["output_type"] == "png":
-        command.append("--no-pdf")
 
     command.extend([
         "--mlo-header-size",
@@ -141,7 +140,6 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
     data = output_dir / f"{base_name}_data.json"
     ljm_png = output_dir / f"{base_name}.png"
     mlo_png = output_dir / f"{base_name}_mlos.png"
-    pdf = output_dir / f"{base_name}.pdf"
 
     if review.exists():
         results["review"] = review
@@ -151,25 +149,37 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
         results["ljm_png"] = ljm_png
     if mlo_png.exists():
         results["mlo_png"] = mlo_png
-    if pdf.exists():
-        results["pdf"] = pdf
 
-    if st.session_state["output_type"] == "pdf":
+    png_pages: list[Path] = []
+    if st.session_state["render_target"] in ("mlo", "both") and mlo_png.exists():
+        png_pages.append(mlo_png)
+    if st.session_state["render_target"] in ("ljm", "both") and ljm_png.exists():
+        png_pages.append(ljm_png)
+    if png_pages:
         pdf_target = output_dir / f"{base_name}_combined.pdf"
-        png_pages: list[Path] = []
-        if st.session_state["render_target"] in ("mlo", "both") and mlo_png.exists():
-            png_pages.append(mlo_png)
-        if st.session_state["render_target"] in ("ljm", "both") and ljm_png.exists():
-            png_pages.append(ljm_png)
-        if png_pages:
-            build_multipage_pdf(png_pages, pdf_target)
-            results["pdf"] = pdf_target
+        build_multipage_pdf(png_pages, pdf_target)
+        results["pdf"] = pdf_target
 
     return results
 
 
 def file_bytes(path: Path) -> bytes:
     return path.read_bytes()
+
+
+def build_zip(results: dict[str, Path], base_name: str) -> bytes:
+    names = {
+        "pdf": f"{base_name}_combined.pdf",
+        "mlo_png": f"{base_name}_mlos.png",
+        "ljm_png": f"{base_name}.png",
+        "review": f"{base_name}_review.txt",
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for key, filename in names.items():
+            if key in results:
+                archive.write(results[key], arcname=filename)
+    return buffer.getvalue()
 
 
 def main() -> None:
@@ -193,13 +203,7 @@ def main() -> None:
             index=["flex-height", "standard", "fit-fixed"].index(st.session_state["layout_mode"]),
             format_func=lambda value: {"flex-height": "Flexi-height", "standard": "Fixed", "fit-fixed": "Fixed + fit"}[value],
         )
-        st.session_state["output_type"] = st.radio(
-            "Download type",
-            options=["png", "pdf"],
-            index=["png", "pdf"].index(st.session_state["output_type"]),
-            format_func=lambda value: "PNG(s)" if value == "png" else "PDF (single file)",
-        )
-        st.caption("PDF output is assembled from the generated PNGs.")
+        st.caption("PDF, PNGs, and the review text are all generated together.")
 
         if False:
             with st.expander("Advanced MLO controls", expanded=False):
@@ -246,6 +250,38 @@ def main() -> None:
         st.subheader("Downloads")
         base_name = st.session_state.get("last_input_name", "ljm_output")
 
+        st.download_button(
+            "Download all as ZIP",
+            data=build_zip(results, base_name),
+            file_name=f"{base_name}_assets.zip",
+            mime="application/zip",
+            type="primary",
+        )
+
+        if "pdf" in results:
+            st.download_button(
+                "Download PDF",
+                data=file_bytes(results["pdf"]),
+                file_name=f"{base_name}_combined.pdf",
+                mime="application/pdf",
+            )
+
+        if "mlo_png" in results:
+            st.download_button(
+                "Download MLO PNG",
+                data=file_bytes(results["mlo_png"]),
+                file_name=f"{base_name}_mlos.png",
+                mime="image/png",
+            )
+
+        if "ljm_png" in results:
+            st.download_button(
+                "Download LJM PNG",
+                data=file_bytes(results["ljm_png"]),
+                file_name=f"{base_name}.png",
+                mime="image/png",
+            )
+
         if "review" in results:
             st.download_button(
                 "Download review text",
@@ -253,6 +289,7 @@ def main() -> None:
                 file_name=f"{base_name}_review.txt",
                 mime="text/plain",
             )
+
         if False:
             if "data" in results:
                 st.download_button(
@@ -261,30 +298,6 @@ def main() -> None:
                     file_name=f"{base_name}_data.json",
                     mime="application/json",
                 )
-
-        if st.session_state["output_type"] == "png" and st.session_state["render_target"] in ("ljm", "both") and "ljm_png" in results:
-            st.download_button(
-                "Download LJM PNG",
-                data=file_bytes(results["ljm_png"]),
-                file_name=f"{base_name}.png",
-                mime="image/png",
-            )
-
-        if st.session_state["output_type"] == "png" and st.session_state["render_target"] in ("mlo", "both") and "mlo_png" in results:
-            st.download_button(
-                "Download MLO PNG",
-                data=file_bytes(results["mlo_png"]),
-                file_name=f"{base_name}_mlos.png",
-                mime="image/png",
-            )
-
-        if st.session_state["output_type"] == "pdf" and "pdf" in results:
-            st.download_button(
-                "Download PDF",
-                data=file_bytes(results["pdf"]),
-                file_name=f"{base_name}_combined.pdf",
-                mime="application/pdf",
-            )
 
 
 if __name__ == "__main__":

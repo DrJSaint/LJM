@@ -134,7 +134,7 @@ Render PNG and PDF from extracted JSON:
 py ".\python scripts\render_student_journey_map_png.py" --input ".\output\student_journey_map_data.json" --output ".\output\student_journey_map.png" --pdf ".\output\student_journey_map.pdf" --layout-mode flex-height
 ```
 
-Render 1080x1080 Module Learning Outcomes PNG from extracted JSON:
+Render Module Learning Outcomes PNG from extracted JSON (3240px wide, dynamic height):
 
 ```powershell
 py ".\python scripts\render_module_learning_outcomes_png.py" --input ".\output\student_journey_map_data.json" --output ".\output\student_journey_map_mlos.png"
@@ -148,7 +148,7 @@ Run the web demo locally:
 streamlit run .\app.py
 ```
 
-The demo uploads a Word document, runs the existing pipeline, and offers downloads for the generated files. It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
+The demo uploads a Word document, runs the existing pipeline, and always generates all assets together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. Downloads are offered individually in that order, plus a "Download all as ZIP" button. It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
 
 ## Git Notes
 

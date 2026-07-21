@@ -4,11 +4,14 @@
 This repo generates learner journey artifacts from a Word `.docx`:
 - LJM poster (PNG)
 - MLO card (PNG, transparent header band)
-- Optional combined PDF assembled from generated PNG pages in the Streamlit app
+- Combined PDF assembled from generated PNG pages in the Streamlit app
 
 ## Current Priority State
-The app UI was intentionally reverted back to a mostly plain Streamlit layout after a branding experiment.
-The user preferred minimal UI customization.
+The app UI is a mostly plain Streamlit layout after an earlier branding experiment was reverted.
+The user prefers minimal UI customization — do not reintroduce heavy custom CSS unless explicitly asked.
+
+As of this session, the app always generates all assets together (PDF, both PNGs, review text) —
+there is no more PNG/PDF download-type choice. See "Streamlit app" below.
 
 ## What Is Implemented
 
@@ -21,10 +24,9 @@ The user preferred minimal UI customization.
 ### 2) MLO renderer behavior
 In `python scripts/render_module_learning_outcomes_png.py`:
 - Dynamic height by outcome count/content (no forced clipping)
-- Fixed width (1080)
 - Header row transparent in PNG (`RGBA`)
-- Header text in dark palette color
-- Defaults currently tuned to:
+- Header text in dark palette color, reads `Learning\nOutcomes\nfor {code}` (lowercase "for")
+- Defaults currently tuned to (pre-scale, "nominal" units — see resolution note below):
   - header size: 52
   - code size: 52
   - title size: 37
@@ -41,26 +43,53 @@ In `python scripts/make_student_journey_map.py`:
 - `--mlo-line-spacing`
 - `--mlo-header-line-gap`
 
-### 4) Streamlit app
+These values are specified in nominal ("1x") units — the renderer scales them internally (see below).
+
+### 4) Render resolution / print quality
+Both renderers deliver 3x their original design resolution now (bumped from 1x, then 2x, then 3x
+during this session, based on user feedback that output looked soft when zoomed/printed):
+- `render_student_journey_map_png.py`: `RENDER_SCALE = 6` (supersampling used only to antialias
+  circles/lines/pill corners — Pillow doesn't antialias shapes at draw time) and `PRINT_SCALE = 3`
+  (multiplies the final delivered resolution beyond the original 800px design width). Final PNG is
+  ~2400px wide. The embedded PDF DPI (`PDF_BASE_RESOLUTION * PRINT_SCALE` = 450) scales with it so
+  the physical PDF page size is unchanged, just denser.
+  - A handful of hardcoded pixel offsets (title start y, node-label nudge, block-width padding, etc.)
+    were re-based as named constants (`_legacy_scaled(...)`) so they stay proportional if `RENDER_SCALE`
+    changes again — they were tuned by eye at the old `RENDER_SCALE = 3` and would otherwise drift.
+- `render_module_learning_outcomes_png.py`: `RESOLUTION_SCALE = 3` scales the whole design (canvas,
+  layout offsets, font sizes) together. Final PNG is ~3240px wide. The CLI override path
+  (`--mlo-header-size` etc.) also multiplies by `RESOLUTION_SCALE`, since the Streamlit app always
+  passes those flags — without that, overrides would silently reset sizes back to nominal/unscaled.
+- This is still raster (Pillow `ImageDraw`), not vector — discussed switching to a vector backend
+  (`reportlab`/`pycairo`/SVG) for true infinite-zoom sharpness, but that's a separate, larger rewrite
+  the user opted not to pursue for now. Revisit only if asked.
+
+### 5) Streamlit app
 In `app.py`:
 - Upload one `.docx`
 - Render target: `ljm | mlo | both`
 - Layout mode: `flex-height | standard | fit-fixed`
-- Download type: `png | pdf`
+- No more download-type choice — every run always generates the PDF, both PNGs (whichever the
+  render target implies), and the review text together.
+- Downloads are shown in this fixed order: **Download all as ZIP** (primary button, bundles
+  whichever of the four exist), then PDF, then MLO PNG, then LJM PNG, then review text.
 - Hidden (kept in code via `if False` blocks, not deleted):
   - Advanced MLO controls
   - Pipeline log expander
   - JSON download button
   - Reset workspace button
 
-## Important PDF Logic (recent fixes)
+## Important PDF Logic
 In `app.py`:
 - Combined PDF is assembled from generated PNGs (`build_multipage_pdf`)
-- Transparency handling fix: alpha images are composited onto cream background `(247, 241, 232)` before RGB conversion to avoid black transparent areas in PDF
-- Page order currently set to:
-  1. MLO first
-  2. LJM second
-  (when both exist)
+- Transparency handling: alpha images are composited onto **white** `PDF_PAGE_BG = (255, 255, 255)`
+  before RGB conversion. This was changed from cream `(247, 241, 232)` this session — cream matched
+  the MLO card's row-1 background exactly, so the transparent header band was visually merging into
+  row 1 in the PDF instead of staying distinct (see the LJM poster's own background, which is cream —
+  the MLO header itself is meant to read as white/blank space above the colored rows).
+- Page order: 1. MLO first, 2. LJM second (when both exist)
+- `build_zip(results, base_name)` bundles whichever of PDF / MLO PNG / LJM PNG / review text exist
+  into an in-memory zip (`io.BytesIO` + `zipfile`) for the "Download all as ZIP" button.
 
 ## Local Run
 From repo root:
@@ -79,18 +108,26 @@ If Streamlit is missing in venv:
 - Browser may remember collapsed sidebar state; controls are still present in sidebar.
 - Combined PDF is app-side composition from PNG outputs.
 - User requested minimal UI styling; do not reintroduce heavy custom CSS unless explicitly asked.
-
-## Git State At Last Check
-- Modified: `README.md`
-- Modified: `requirements.txt`
-- Untracked: `app.py`
-- Untracked input doc example: `input/Blurb for Claude.docx`
-
-## Commit / Tag Context
-- `77c8cc6` on `main` (also tagged `mlo-final-tuning`)
-- Streamlit work in `app.py` is currently local/uncommitted.
+- **Known pre-existing bug (not yet fixed):** `extract_assessment()` in
+  `extract_student_journey_map_v2.py` can pull a tripled/duplicated assessment paragraph out of the
+  source docx table cell (observed on Week 6 of `DSC502_Learner_Journey_Map.docx` — the same sentence
+  repeated 3x). This overflows even at `fit-fixed` mode's minimum font size and overlaps the timeline.
+  Root cause is in extraction, not rendering. Worth investigating if the user brings it up.
 
 ## Suggested Next Step For Claude
-1. Confirm app behavior in UI for both download modes.
-2. Commit pending app/repo changes when user confirms final state.
-3. Keep UI minimal unless user asks for targeted styling only.
+1. Nothing outstanding from this session — all changes below are committed. Confirm with the user
+   before starting new work.
+2. If asked to keep improving quality: the tripled-assessment-text extraction bug above is the next
+   known issue.
+3. If asked about vector output: this was discussed and explicitly deferred — don't start it
+   unprompted.
+4. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (most recent session)
+- Cleaned up dead code (unused imports/vars) across all four Python scripts.
+- Fixed PDF header-transparency-blending-into-cream-row bug (`PDF_PAGE_BG` → white).
+- Changed MLO header text to lowercase "for".
+- Increased render resolution 3x on both renderers (see "Render resolution / print quality" above),
+  including a compatibility fix to hardcoded pixel offsets in the poster renderer.
+- Reworked the Streamlit app: removed the PNG/PDF download-type radio, app now always generates all
+  assets, downloads shown in a fixed order, added a "Download all as ZIP" button.

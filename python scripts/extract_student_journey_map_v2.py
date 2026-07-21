@@ -152,7 +152,7 @@ def extract_weeks(docx_path:Path, week_1_monday:date):
     return module_title, sorted(weeks, key=lambda w:w.week), mlos
 
 def validate_weeks(weeks, expected):
-    issues=[]; nums=[w.week for w in weeks]
+    issues=[]
     if len(weeks)!=expected: issues.append(f'Expected {expected} week rows but found {len(weeks)}.')
     for w in weeks:
         if not w.title: issues.append(f'Week {w.week}: missing title.')
