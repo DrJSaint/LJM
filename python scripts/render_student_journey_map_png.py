@@ -28,58 +28,59 @@ DEFAULT_OUTPUT = "../output/student_journey_map.png"
 DEFAULT_PDF = "../output/student_journey_map.pdf"
 RENDER_SCALE = 3
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CROP_TO_CONTENT = False
 
 STYLE = {
     "canvas": {
-        "width": 1600,
-        "background": "#F4E9D8",
-        "top_padding": 235,
-        "bottom_padding": 160,
+        "width": 800,
+        "background": "#F7F1E8",
+        "top_padding": 200,
+        "bottom_padding": 70,
         "side_margin": 110,
     },
     "palette": {
-        "green": "#1E6556",
-        "green_dark": "#16483F",
-        "text": "#1A1A1A",
-        "muted": "#575757",
-        "cream": "#F4E9D8",
-        "white": "#F3F5F2",
-        "line": "#D9C9F2",
-        "node": "#D9C9F2",
-        "accent": "#8A2F24",
+        "green": "#195C4D",
+        "green_dark": "#195C4D",
+        "text": "#171F20",
+        "muted": "#171F20",
+        "cream": "#F7F1E8",
+        "white": "#F7F1E8",
+        "line": "#D8CBF1",
+        "node": "#D8CBF1",
+        "accent": "#710704",
     },
     "timeline": {
-        "x": 800,
-        "line_width": 10,
-        "circle_radius": 56,
+        "x": 400,
+        "line_width": 5,
+        "circle_radius": 42,
         "circle_stroke": 0,
         "connector_width": 5,
-        "week_gap": 245,
-        "assessment_ring": 28,
+        "week_gap": 150,
+        "assessment_ring": 17,
     },
     "text": {
-        "title_size": 58,
-        "subtitle_size": 34,
-        "date_size": 30,
-        "week_title_size": 30,
-        "detail_size": 24,
-        "pill_size": 30,
-        "circle_size": 34,
+        "title_size": 30,
+        "subtitle_size": 30,
+        "date_size": 16,
+        "week_title_size": 16,
+        "detail_size": 16,
+        "pill_size": 16,
+        "circle_size": 26,
         "footer_size": 20,
         "line_spacing": 8,
     },
     "blocks": {
         "width": 540,
-        "date_title_gap": 10,
+        "date_title_gap": 4,
         "title_detail_gap": 14,
         "pill_gap": 22,
-        "timeline_gap": 115,
+        "timeline_gap": 90,
     },
     "pill": {
-        "padding_x": 28,
+        "padding_x": 20,
         "padding_y": 18,
         "radius": 30,
-        "max_width": 520,
+        "max_width": 320,
         "node_overlap": 10,
     },
 }
@@ -93,6 +94,10 @@ def scale_style_values(obj, scale: int) -> None:
 
 
 scale_style_values(STYLE, RENDER_SCALE)
+AVENIR_OPTICAL_COMP_FINAL_PX = 5
+AVENIR_OPTICAL_COMP = AVENIR_OPTICAL_COMP_FINAL_PX * RENDER_SCALE
+MAGNOLE_OPTICAL_COMP_FINAL_PX = 1
+MAGNOLE_OPTICAL_COMP = MAGNOLE_OPTICAL_COMP_FINAL_PX * RENDER_SCALE
 
 # ---------------------------
 # Font helpers
@@ -135,32 +140,32 @@ def load_font(size: int, names: list[str], fallback: list[str] | None = None) ->
 
 FONTS = {
     "title": load_font(
-        STYLE["text"]["title_size"],
+        STYLE["text"]["title_size"] + MAGNOLE_OPTICAL_COMP,
         ["magnole-regular.otf"],
         ["georgia.ttf", "DejaVuSerif.ttf"],
     ),
     "subtitle": load_font(
-        STYLE["text"]["subtitle_size"],
+        STYLE["text"]["subtitle_size"] + MAGNOLE_OPTICAL_COMP,
         ["magnole-regular.otf"],
         ["georgia.ttf", "DejaVuSerif.ttf"],
     ),
     "date": load_font(
-        STYLE["text"]["date_size"],
+        STYLE["text"]["date_size"] + AVENIR_OPTICAL_COMP,
         ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
         ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
     ),
     "week_title": load_font(
-        STYLE["text"]["week_title_size"],
+        STYLE["text"]["week_title_size"] + AVENIR_OPTICAL_COMP,
         ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
         ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
     ),
     "detail": load_font(
-        STYLE["text"]["detail_size"],
+        STYLE["text"]["detail_size"] + AVENIR_OPTICAL_COMP,
         ["AvenirNextLTPro-Regular.otf", "AvenirNextLTPro-Mediumlt.otf"],
         ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
     ),
     "pill": load_font(
-        STYLE["text"]["pill_size"],
+        STYLE["text"]["pill_size"] + AVENIR_OPTICAL_COMP,
         ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
         ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
     ),
@@ -170,7 +175,7 @@ FONTS = {
         ["bahnschrift.ttf", "verdanab.ttf"],
     ),
     "footer": load_font(
-        STYLE["text"]["footer_size"],
+        STYLE["text"]["footer_size"] + AVENIR_OPTICAL_COMP,
         ["AvenirNextLTPro-Regular.otf"],
         ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
     ),
@@ -276,7 +281,7 @@ def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str) -
     max_width = STYLE["pill"]["max_width"]
     lines, width, height = pill_size(draw, text, max_width)
     timeline_x = STYLE["timeline"]["x"]
-    node_outer_radius = STYLE["timeline"]["circle_radius"] + STYLE["timeline"]["assessment_ring"]
+    node_outer_radius = STYLE["timeline"]["circle_radius"]
     node_overlap = STYLE["pill"]["node_overlap"]
 
     if side == "left":
@@ -289,7 +294,7 @@ def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str) -
 
     lines_heights = [text_size(draw, line, FONTS["pill"])[1] for line in lines]
     total_text_height = sum(lines_heights) + max(0, len(lines) - 1) * 5
-    text_y = y + max(0, (height - total_text_height) // 2) - 14
+    text_y = y + max(0, (height - total_text_height) // 2) - 2
     for line in lines:
         tw, th = text_size(draw, line, FONTS["pill"])
         draw.text((rect_x + (width - tw) // 2, text_y), line, font=FONTS["pill"], fill=palette["white"])
@@ -360,16 +365,17 @@ def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highligh
     rect = [x - r, y - r, x + r, y + r]
 
     if highlighted:
-        outer_r = r + STYLE["timeline"]["assessment_ring"]
-        outer_rect = [x - outer_r, y - outer_r, x + outer_r, y + outer_r]
-        draw.ellipse(outer_rect, fill=palette["green"])
-
-    draw.ellipse(rect, fill=palette["node"])
+        draw.ellipse(rect, fill=palette["green"])
+        inner_r = max(10, r - STYLE["timeline"]["assessment_ring"])
+        inner_rect = [x - inner_r, y - inner_r, x + inner_r, y + inner_r]
+        draw.ellipse(inner_rect, fill=palette["node"])
+    else:
+        draw.ellipse(rect, fill=palette["node"])
 
     label = str(week_number)
     w, h = text_size(draw, label, FONTS["circle"])
     label_fill = palette["accent"] if highlighted else palette["text"]
-    draw.text((x - w // 2, y - h // 2 - 8), label, font=FONTS["circle"], fill=label_fill)
+    draw.text((x - w // 2, y - h // 2 - 20), label, font=FONTS["circle"], fill=label_fill)
 
 
 # ---------------------------
@@ -394,7 +400,7 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
     draw = ImageDraw.Draw(image)
     palette = STYLE["palette"]
 
-    y = 70
+    y = 90
     y = draw_centered_text(draw, y, data["module_title"], FONTS["title"], palette["text"], width)
     y += 16
     y = draw_centered_text(draw, y, "Learner Journey Map", FONTS["subtitle"], palette["text"], width)
@@ -414,12 +420,6 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
         draw_week_block(draw, week, ys[idx], side, block_width)
         draw_week_node(draw, int(week["week"]), ys[idx], bool(week.get("render_pill")))
 
-    footer = data.get("module_title", "")
-    if footer:
-        foot = f"{footer}"
-        fw, fh = text_size(draw, foot, FONTS["footer"])
-        draw.text(((width - fw) // 2, height - bottom // 2), foot, font=FONTS["footer"], fill=palette["muted"])
-
     output_png.parent.mkdir(parents=True, exist_ok=True)
 
     final_image = image.resize(
@@ -430,17 +430,18 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
         Image.Resampling.LANCZOS,
     )
 
-    background = Image.new(final_image.mode, final_image.size, STYLE["canvas"]["background"])
-    diff = ImageChops.difference(final_image, background)
-    bbox = diff.getbbox()
-    if bbox:
-        left, top_crop, right, bottom_crop = bbox
-        pad = 24
-        left = max(0, left - pad)
-        top_crop = max(0, top_crop - pad)
-        right = min(final_image.width, right + pad)
-        bottom_crop = min(final_image.height, bottom_crop + pad)
-        final_image = final_image.crop((left, top_crop, right, bottom_crop))
+    if CROP_TO_CONTENT:
+        background = Image.new(final_image.mode, final_image.size, STYLE["canvas"]["background"])
+        diff = ImageChops.difference(final_image, background)
+        bbox = diff.getbbox()
+        if bbox:
+            left, top_crop, right, bottom_crop = bbox
+            pad = 24
+            left = max(0, left - pad)
+            top_crop = max(0, top_crop - pad)
+            right = min(final_image.width, right + pad)
+            bottom_crop = min(final_image.height, bottom_crop + pad)
+            final_image = final_image.crop((left, top_crop, right, bottom_crop))
 
     final_image.save(output_png, "PNG")
 
