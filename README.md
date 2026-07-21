@@ -40,13 +40,14 @@ This runs the full pipeline:
 
 ## Default Input
 
-The wrapper script expects this file by default:
+The wrapper script's default `--input` path is:
 
 ```text
 input/DSC502_Learner_Journey_Map.docx
 ```
 
-If you want to use a different file:
+`input/` is gitignored (it may contain real course content), so this file won't exist in a fresh
+clone — place your own `.docx` there, or pass `--input` explicitly:
 
 ```powershell
 py ".\python scripts\make_student_journey_map.py" --input ".\input\your_file.docx"

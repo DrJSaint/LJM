@@ -12,8 +12,8 @@ import streamlit as st
 from PIL import Image
 
 
-APP_TITLE = "LJM Renderer Demo"
-APP_SUBTITLE = "Upload a Word document and generate LJM and/or MLO assets from the existing pipeline."
+APP_TITLE = "LJM MLO Renderer"
+APP_SUBTITLE = "Upload your Learner Journey Map to generate student-facing PDFs and images for Blackboard."
 
 REPO_ROOT = Path(__file__).resolve().parent
 PIPELINE_SCRIPT = REPO_ROOT / "python scripts" / "make_student_journey_map.py"
@@ -186,17 +186,38 @@ def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     init_state()
 
+    # Scoped to just the file uploader's own button, not buttons elsewhere in the app.
+    # Also scoped to the primary button inside st.columns (the "Generate" button) so it
+    # doesn't affect the other primary button ("Download all as ZIP"), which isn't in a column.
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stFileUploader"] button:hover {
+            background-color: #195C4D !important;
+            border-color: #195C4D !important;
+            color: #E7F95D !important;
+        }
+        div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:not(:disabled),
+        div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:not(:disabled) p {
+            color: #E7F95D !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title(APP_TITLE)
-    st.caption(APP_SUBTITLE)
+    st.subheader(APP_SUBTITLE)
 
     with st.sidebar:
         st.header("Options")
-        st.session_state["render_target"] = st.radio(
-            "Render target",
-            options=["ljm", "mlo", "both"],
-            index=["ljm", "mlo", "both"].index(st.session_state["render_target"]),
-            format_func=lambda value: {"ljm": "LJM", "mlo": "MLO", "both": "Both"}[value],
-        )
+        if False:
+            st.session_state["render_target"] = st.radio(
+                "Render target",
+                options=["ljm", "mlo", "both"],
+                index=["ljm", "mlo", "both"].index(st.session_state["render_target"]),
+                format_func=lambda value: {"ljm": "LJM", "mlo": "MLO", "both": "Both"}[value],
+            )
         st.session_state["layout_mode"] = st.radio(
             "Layout mode",
             options=["flex-height", "standard", "fit-fixed"],
@@ -214,11 +235,11 @@ def main() -> None:
                 st.session_state["mlo_line_spacing"] = st.number_input("Description line spacing", min_value=0, max_value=30, value=int(st.session_state["mlo_line_spacing"]))
                 st.session_state["mlo_header_line_gap"] = st.number_input("Header line gap", min_value=0, max_value=30, value=int(st.session_state["mlo_header_line_gap"]))
 
-    uploaded_file = st.file_uploader("Upload a Learner Journey Map Word document", type=["docx"])
+    uploaded_file = st.file_uploader("Drag and drop your Learner Journey Map here, or click Upload to browse.", type=["docx"])
 
     col1, col2 = st.columns([1, 1])
     with col1:
-        generate = st.button("Generate assets", type="primary", disabled=uploaded_file is None)
+        generate = st.button("Generate PDF and PNGs", type="primary", disabled=uploaded_file is None)
     with col2:
         if False:
             if st.button("Reset workspace"):

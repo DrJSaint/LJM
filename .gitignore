@@ -14,3 +14,7 @@ Thumbs.db
 # Generated renderer artifacts
 output/*
 !output/.gitkeep
+
+# Sample/local input documents (may contain real course content) — keep local only
+input/*
+!input/.gitkeep
