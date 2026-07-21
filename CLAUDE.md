@@ -56,6 +56,13 @@ during this session, based on user feedback that output looked soft when zoomed/
   - A handful of hardcoded pixel offsets (title start y, node-label nudge, block-width padding, etc.)
     were re-based as named constants (`_legacy_scaled(...)`) so they stay proportional if `RENDER_SCALE`
     changes again — they were tuned by eye at the old `RENDER_SCALE = 3` and would otherwise drift.
+  - **Fixed (follow-up session, 2026-07-22):** that rebase missed one spot. `compute_standard_image_height()`
+    (used by `standard` and `fit-fixed` layout modes only — `flex-height` was unaffected) had the literal
+    `120` appear twice in its original bottom-padding formula: once building `top` (correctly rebased to
+    `TIMELINE_TOP_OFFSET`) and once tacked onto the final `return` (missed, left as bare `120`). Fixed by
+    reusing `TIMELINE_TOP_OFFSET` for the second occurrence too, since both instances were the same source
+    value. Low-impact (a few dozen px of bottom padding drift at current scale) but would have kept
+    drifting further out of proportion on any future `RENDER_SCALE` change.
 - `render_module_learning_outcomes_png.py`: `RESOLUTION_SCALE = 3` scales the whole design (canvas,
   layout offsets, font sizes) together. Final PNG is ~3240px wide. The CLI override path
   (`--mlo-header-size` etc.) also multiplies by `RESOLUTION_SCALE`, since the Streamlit app always
@@ -122,7 +129,12 @@ If Streamlit is missing in venv:
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
 
-## Session Log (most recent session)
+## Session Log (2026-07-22 follow-up)
+- Fixed a leftover unscaled literal in `compute_standard_image_height()` (`render_student_journey_map_png.py`)
+  found while checking whether `standard`/`fit-fixed` layout modes still scale correctly post-3x. See
+  "Render resolution / print quality" above for detail.
+
+## Session Log (previous session)
 - Cleaned up dead code (unused imports/vars) across all four Python scripts.
 - Fixed PDF header-transparency-blending-into-cream-row bug (`PDF_PAGE_BG` → white).
 - Changed MLO header text to lowercase "for".

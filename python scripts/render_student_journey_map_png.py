@@ -515,7 +515,7 @@ def compute_standard_image_height(count: int) -> int:
     gap = STYLE["timeline"]["week_gap"]
     top = STYLE["canvas"]["top_padding"] + TIMELINE_TOP_OFFSET
     bottom = STYLE["canvas"]["bottom_padding"]
-    return top + (count - 1) * gap + bottom + 120
+    return top + (count - 1) * gap + bottom + TIMELINE_TOP_OFFSET
 
 
 def detect_fit_fixed_issues(layouts: list[dict], centers: list[int], header_bottom: int) -> list[dict]:
