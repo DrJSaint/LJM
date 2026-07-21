@@ -140,6 +140,16 @@ Render 1080x1080 Module Learning Outcomes PNG from extracted JSON:
 py ".\python scripts\render_module_learning_outcomes_png.py" --input ".\output\student_journey_map_data.json" --output ".\output\student_journey_map_mlos.png"
 ```
 
+## Streamlit Demo
+
+Run the web demo locally:
+
+```powershell
+streamlit run .\app.py
+```
+
+The demo uploads a Word document, runs the existing pipeline, and offers downloads for the generated files. It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
+
 ## Git Notes
 
 Generated files under `output/` are ignored by Git. The folder stays in the repo via `output/.gitkeep`.
