@@ -108,20 +108,19 @@ If Streamlit is missing in venv:
 - Browser may remember collapsed sidebar state; controls are still present in sidebar.
 - Combined PDF is app-side composition from PNG outputs.
 - User requested minimal UI styling; do not reintroduce heavy custom CSS unless explicitly asked.
-- **Known pre-existing bug (not yet fixed):** `extract_assessment()` in
-  `extract_student_journey_map_v2.py` can pull a tripled/duplicated assessment paragraph out of the
-  source docx table cell (observed on Week 6 of `DSC502_Learner_Journey_Map.docx` — the same sentence
-  repeated 3x). This overflows even at `fit-fixed` mode's minimum font size and overlaps the timeline.
-  Root cause is in extraction, not rendering. Worth investigating if the user brings it up.
+- **Not a bug (confirmed by user):** Week 6 of `DSC502_Learner_Journey_Map.docx` has the same
+  assessment sentence repeated 3x in the source table cell. This was the user deliberately
+  stress-testing text handling by copy-pasting it, not an extraction defect — `extract_assessment()`
+  is correctly reading exactly what's in the source. It does still overflow `fit-fixed` mode's minimum
+  font size and overlap the timeline under that much text, which is a legitimate layout limit worth
+  knowing about, but there's nothing to fix in extraction.
 
 ## Suggested Next Step For Claude
 1. Nothing outstanding from this session — all changes below are committed. Confirm with the user
    before starting new work.
-2. If asked to keep improving quality: the tripled-assessment-text extraction bug above is the next
-   known issue.
-3. If asked about vector output: this was discussed and explicitly deferred — don't start it
+2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
-4. Keep UI minimal unless user asks for targeted styling only.
+3. Keep UI minimal unless user asks for targeted styling only.
 
 ## Session Log (most recent session)
 - Cleaned up dead code (unused imports/vars) across all four Python scripts.
