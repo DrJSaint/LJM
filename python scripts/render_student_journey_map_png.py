@@ -18,7 +18,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Mapping, Tuple, cast
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
@@ -29,6 +29,18 @@ DEFAULT_PDF = "../output/student_journey_map.pdf"
 RENDER_SCALE = 3
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CROP_TO_CONTENT = False
+STANDARD_OUTPUT_HEIGHT = 2000
+DEFAULT_LAYOUT_MODE = "flex-height"
+LAYOUT_MODES = ("standard", "fit-fixed", "flex-height")
+FIT_FIXED_MIN_DETAIL_SIZE = 12 * RENDER_SCALE
+# Keep pills more visually stable in fixed mode; let detail absorb more pressure first.
+FIT_FIXED_MIN_PILL_SIZE = 14 * RENDER_SCALE
+FIT_FIXED_STEP = 1 * RENDER_SCALE
+HEADER_CLEARANCE = 26
+LANE_CLEARANCE = 18
+FLEX_HEADER_CLEARANCE = 40 * RENDER_SCALE
+FLEX_BOTTOM_PADDING = 20 * RENDER_SCALE
+FLEX_BOTTOM_EXTRA = 0
 
 STYLE = {
     "canvas": {
@@ -129,57 +141,65 @@ def find_font(names: str | list[str]) -> Path | None:
     return None
 
 
-def load_font(size: int, names: list[str], fallback: list[str] | None = None) -> ImageFont.FreeTypeFont:
+def load_font(size: int, names: list[str], fallback: list[str] | None = None) -> ImageFont.ImageFont:
     path = find_font(names)
     if not path and fallback:
         path = find_font(fallback)
     if path:
-        return ImageFont.truetype(str(path), size=size)
-    return ImageFont.load_default()
+        return cast(ImageFont.ImageFont, ImageFont.truetype(str(path), size=size))
+    return cast(ImageFont.ImageFont, ImageFont.load_default())
 
 
-FONTS = {
-    "title": load_font(
-        STYLE["text"]["title_size"] + MAGNOLE_OPTICAL_COMP,
-        ["magnole-regular.otf"],
-        ["georgia.ttf", "DejaVuSerif.ttf"],
-    ),
-    "subtitle": load_font(
-        STYLE["text"]["subtitle_size"] + MAGNOLE_OPTICAL_COMP,
-        ["magnole-regular.otf"],
-        ["georgia.ttf", "DejaVuSerif.ttf"],
-    ),
-    "date": load_font(
-        STYLE["text"]["date_size"] + AVENIR_OPTICAL_COMP,
-        ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
-        ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
-    ),
-    "week_title": load_font(
-        STYLE["text"]["week_title_size"] + AVENIR_OPTICAL_COMP,
-        ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
-        ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
-    ),
-    "detail": load_font(
-        STYLE["text"]["detail_size"] + AVENIR_OPTICAL_COMP,
-        ["AvenirNextLTPro-Regular.otf", "AvenirNextLTPro-Mediumlt.otf"],
-        ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
-    ),
-    "pill": load_font(
-        STYLE["text"]["pill_size"] + AVENIR_OPTICAL_COMP,
-        ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
-        ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
-    ),
-    "circle": load_font(
-        STYLE["text"]["circle_size"],
-        ["OpenSans_Condensed-Bold.ttf"],
-        ["bahnschrift.ttf", "verdanab.ttf"],
-    ),
-    "footer": load_font(
-        STYLE["text"]["footer_size"] + AVENIR_OPTICAL_COMP,
-        ["AvenirNextLTPro-Regular.otf"],
-        ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
-    ),
-}
+def build_fonts(text_sizes: dict[str, int] | None = None) -> dict[str, ImageFont.ImageFont]:
+    sizes = dict(STYLE["text"])
+    if text_sizes:
+        sizes.update(text_sizes)
+
+    return {
+        "title": load_font(
+            sizes["title_size"] + MAGNOLE_OPTICAL_COMP,
+            ["magnole-regular.otf"],
+            ["georgia.ttf", "DejaVuSerif.ttf"],
+        ),
+        "subtitle": load_font(
+            sizes["subtitle_size"] + MAGNOLE_OPTICAL_COMP,
+            ["magnole-regular.otf"],
+            ["georgia.ttf", "DejaVuSerif.ttf"],
+        ),
+        "date": load_font(
+            sizes["date_size"] + AVENIR_OPTICAL_COMP,
+            ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
+            ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
+        ),
+        "week_title": load_font(
+            sizes["week_title_size"] + AVENIR_OPTICAL_COMP,
+            ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
+            ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
+        ),
+        "detail": load_font(
+            sizes["detail_size"] + AVENIR_OPTICAL_COMP,
+            ["AvenirNextLTPro-Regular.otf", "AvenirNextLTPro-Mediumlt.otf"],
+            ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
+        ),
+        "pill": load_font(
+            sizes["pill_size"] + AVENIR_OPTICAL_COMP,
+            ["AvenirNextLTPro-Bold.otf", "AvenirNextLTPro-Demi.otf"],
+            ["candarab.ttf", "calibrib.ttf", "verdanab.ttf", "arialbd.ttf"],
+        ),
+        "circle": load_font(
+            sizes["circle_size"],
+            ["OpenSans_Condensed-Bold.ttf"],
+            ["bahnschrift.ttf", "verdanab.ttf"],
+        ),
+        "footer": load_font(
+            sizes["footer_size"] + AVENIR_OPTICAL_COMP,
+            ["AvenirNextLTPro-Regular.otf"],
+            ["candara.ttf", "calibri.ttf", "verdana.ttf", "arial.ttf"],
+        ),
+    }
+
+
+FONTS = build_fonts()
 
 
 # ---------------------------
@@ -190,7 +210,7 @@ def text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -
     if not text:
         return 0, 0
     bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    return int(bbox[2] - bbox[0]), int(bbox[3] - bbox[1])
 
 
 def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> List[str]:
@@ -247,12 +267,12 @@ def draw_centered_text(draw: ImageDraw.ImageDraw, y: int, text: str, font: Image
     return y + h
 
 
-def pill_size(draw: ImageDraw.ImageDraw, text: str, max_width: int) -> Tuple[List[str], int, int]:
-    lines = wrap_text(draw, text, FONTS["pill"], max_width - 2 * STYLE["pill"]["padding_x"])
-    line_heights = [text_size(draw, line, FONTS["pill"])[1] for line in lines] or [0]
+def pill_size(draw: ImageDraw.ImageDraw, text: str, max_width: int, fonts: Mapping[str, ImageFont.ImageFont]) -> Tuple[List[str], int, int]:
+    lines = wrap_text(draw, text, fonts["pill"], max_width - 2 * STYLE["pill"]["padding_x"])
+    line_heights = [text_size(draw, line, fonts["pill"])[1] for line in lines] or [0]
     width = 0
     for line in lines:
-        w, _ = text_size(draw, line, FONTS["pill"])
+        w, _ = text_size(draw, line, fonts["pill"])
         width = max(width, w)
     width += 2 * STYLE["pill"]["padding_x"]
     height = sum(line_heights) + (len(lines) - 1) * 5 + 2 * STYLE["pill"]["padding_y"]
@@ -262,24 +282,24 @@ def pill_size(draw: ImageDraw.ImageDraw, text: str, max_width: int) -> Tuple[Lis
 
 def centered_text_y(draw: ImageDraw.ImageDraw, center_y: int, text: str, font: ImageFont.ImageFont) -> int:
     bbox = draw.textbbox((0, 0), text, font=font)
-    text_height = bbox[3] - bbox[1]
+    text_height = int(bbox[3] - bbox[1])
     return center_y - text_height // 2 - 2
 
 
-def compute_block_width(draw: ImageDraw.ImageDraw, weeks: list[dict]) -> int:
+def compute_block_width(draw: ImageDraw.ImageDraw, weeks: list[dict], fonts: Mapping[str, ImageFont.ImageFont]) -> int:
     widest_date = 0
     for week in weeks:
         label = week.get("date_label", "")
-        w, _ = text_size(draw, label, FONTS["date"])
+        w, _ = text_size(draw, label, fonts["date"])
         widest_date = max(widest_date, w)
 
     return max(320, widest_date + 34)
 
 
-def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str) -> int:
+def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
     palette = STYLE["palette"]
     max_width = STYLE["pill"]["max_width"]
-    lines, width, height = pill_size(draw, text, max_width)
+    lines, width, height = pill_size(draw, text, max_width, fonts)
     timeline_x = STYLE["timeline"]["x"]
     node_outer_radius = STYLE["timeline"]["circle_radius"]
     node_overlap = STYLE["pill"]["node_overlap"]
@@ -292,12 +312,13 @@ def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str) -
     rect = [rect_x, y, rect_x + width, y + height]
     draw.rounded_rectangle(rect, radius=STYLE["pill"]["radius"], fill=palette["green"])
 
-    lines_heights = [text_size(draw, line, FONTS["pill"])[1] for line in lines]
+    lines_heights = [text_size(draw, line, fonts["pill"])[1] for line in lines]
     total_text_height = sum(lines_heights) + max(0, len(lines) - 1) * 5
     text_y = y + max(0, (height - total_text_height) // 2) - 2
+    text_x = rect_x + STYLE["pill"]["padding_x"]
     for line in lines:
-        tw, th = text_size(draw, line, FONTS["pill"])
-        draw.text((rect_x + (width - tw) // 2, text_y), line, font=FONTS["pill"], fill=palette["white"])
+        _, th = text_size(draw, line, fonts["pill"])
+        draw.text((text_x, text_y), line, font=fonts["pill"], fill=palette["white"])
         text_y += th + 5
 
     return y + height
@@ -307,15 +328,15 @@ def opposite_side(side: str) -> str:
     return "right" if side == "left" else "left"
 
 
-def measure_week_block(draw: ImageDraw.ImageDraw, week: dict, block_width: int) -> int:
+def measure_week_block(draw: ImageDraw.ImageDraw, week: dict, block_width: int, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
     line_spacing = STYLE["text"]["line_spacing"]
 
-    date_lines = wrap_text(draw, week["date_label"], FONTS["date"], block_width)
-    title_lines = wrap_text(draw, week["title"], FONTS["week_title"], block_width)
-    detail_lines = wrap_text(draw, week["detail"], FONTS["detail"], block_width)
+    date_lines = wrap_text(draw, week["date_label"], fonts["date"], block_width)
+    title_lines = wrap_text(draw, week["title"], fonts["week_title"], block_width)
+    detail_lines = wrap_text(draw, week["detail"], fonts["detail"], block_width)
 
     height = 0
-    for lines, font in [(date_lines, FONTS["date"]), (title_lines, FONTS["week_title"]), (detail_lines, FONTS["detail"] )]:
+    for lines, font in [(date_lines, fonts["date"]), (title_lines, fonts["week_title"]), (detail_lines, fonts["detail"] )]:
         for line in lines:
             _, h = text_size(draw, line, font)
             height += h + line_spacing
@@ -325,7 +346,7 @@ def measure_week_block(draw: ImageDraw.ImageDraw, week: dict, block_width: int) 
     return max(height, 145)
 
 
-def draw_week_block(draw: ImageDraw.ImageDraw, week: dict, center_y: int, side: str, block_width: int) -> None:
+def draw_week_block(draw: ImageDraw.ImageDraw, week: dict, center_y: int, side: str, block_width: int, fonts: Mapping[str, ImageFont.ImageFont]) -> None:
     palette = STYLE["palette"]
     timeline_x = STYLE["timeline"]["x"]
     gap_from_timeline = STYLE["blocks"]["timeline_gap"]
@@ -333,32 +354,33 @@ def draw_week_block(draw: ImageDraw.ImageDraw, week: dict, center_y: int, side: 
 
     if side == "left":
         x = timeline_x - left_gap_from_timeline - block_width
-        align = "right"
+        align = "left"
     else:
         x = timeline_x + gap_from_timeline
         align = "left"
 
-    block_height = measure_week_block(draw, week, block_width)
+    block_height = measure_week_block(draw, week, block_width, fonts)
     y = center_y - block_height // 2
 
-    date_lines = wrap_text(draw, week["date_label"], FONTS["date"], block_width)
-    title_lines = wrap_text(draw, week["title"], FONTS["week_title"], block_width)
-    detail_lines = wrap_text(draw, week["detail"], FONTS["detail"], block_width)
+    date_lines = wrap_text(draw, week["date_label"], fonts["date"], block_width)
+    title_lines = wrap_text(draw, week["title"], fonts["week_title"], block_width)
+    detail_lines = wrap_text(draw, week["detail"], fonts["detail"], block_width)
 
     current_y = y
-    current_y = draw_wrapped_text(draw, x, current_y, date_lines, FONTS["date"], palette["text"], STYLE["text"]["line_spacing"], "left", block_width)
+    current_y = draw_wrapped_text(draw, x, current_y, date_lines, fonts["date"], palette["text"], STYLE["text"]["line_spacing"], align, block_width)
     current_y += STYLE["blocks"]["date_title_gap"]
-    current_y = draw_wrapped_text(draw, x, current_y, title_lines, FONTS["week_title"], palette["text"], STYLE["text"]["line_spacing"], "left", block_width)
+    current_y = draw_wrapped_text(draw, x, current_y, title_lines, fonts["week_title"], palette["text"], STYLE["text"]["line_spacing"], align, block_width)
     current_y += STYLE["blocks"]["title_detail_gap"]
-    current_y = draw_wrapped_text(draw, x, current_y, detail_lines, FONTS["detail"], palette["text"], STYLE["text"]["line_spacing"], "left", block_width)
+    current_y = draw_wrapped_text(draw, x, current_y, detail_lines, fonts["detail"], palette["text"], STYLE["text"]["line_spacing"], align, block_width)
 
     if week.get("render_pill") and week.get("assessment", "").strip():
-        _, _, pill_height = pill_size(draw, week["assessment"], STYLE["pill"]["max_width"])
+        _, _, pill_height = pill_size(draw, week["assessment"], STYLE["pill"]["max_width"], fonts)
         pill_y = center_y - pill_height // 2 - 2
-        draw_pill(draw, x, pill_y, week["assessment"], opposite_side(side))
+        draw_pill(draw, x, pill_y, week["assessment"], opposite_side(side), fonts)
 
 
-def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highlighted: bool = False) -> None:
+def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highlighted: bool = False, fonts: Mapping[str, ImageFont.ImageFont] | None = None) -> None:
+    active_fonts = fonts or FONTS
     palette = STYLE["palette"]
     x = STYLE["timeline"]["x"]
     r = STYLE["timeline"]["circle_radius"]
@@ -373,28 +395,229 @@ def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highligh
         draw.ellipse(rect, fill=palette["node"])
 
     label = str(week_number)
-    w, h = text_size(draw, label, FONTS["circle"])
+    w, h = text_size(draw, label, active_fonts["circle"])
     label_fill = palette["accent"] if highlighted else palette["text"]
-    draw.text((x - w // 2, y - h // 2 - 20), label, font=FONTS["circle"], fill=label_fill)
+    draw.text((x - w // 2, y - h // 2 - 20), label, font=active_fonts["circle"], fill=label_fill)
+
+
+def measure_header_bottom(draw: ImageDraw.ImageDraw, data: dict, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
+    y = 90
+    y = draw_centered_text(draw, y, data["module_title"], fonts["title"], STYLE["palette"]["text"], STYLE["canvas"]["width"])
+    y += 16
+    y = draw_centered_text(draw, y, "Learner Journey Map", fonts["subtitle"], STYLE["palette"]["text"], STYLE["canvas"]["width"])
+    return y
+
+
+def week_side(index: int) -> str:
+    return "left" if index % 2 == 0 else "right"
+
+
+def measure_week_layout(draw: ImageDraw.ImageDraw, week: dict, block_width: int, side: str, fonts: Mapping[str, ImageFont.ImageFont]) -> dict:
+    block_height = measure_week_block(draw, week, block_width, fonts)
+    pill_height = 0
+    pill_side = None
+    if week.get("render_pill") and week.get("assessment", "").strip():
+        pill_side = opposite_side(side)
+        _, _, pill_height = pill_size(draw, week["assessment"], STYLE["pill"]["max_width"], fonts)
+
+    lane_heights = {"left": 0, "right": 0}
+    lane_types: dict[str, str | None] = {"left": None, "right": None}
+    lane_heights[side] = block_height
+    lane_types[side] = "block"
+    if pill_side:
+        lane_heights[pill_side] = pill_height
+        lane_types[pill_side] = "pill"
+
+    return {
+        "side": side,
+        "block_height": block_height,
+        "pill_height": pill_height,
+        "pill_side": pill_side,
+        "lane_heights": lane_heights,
+        "lane_types": lane_types,
+    }
+
+
+def compute_fixed_centers(count: int) -> list[int]:
+    top = STYLE["canvas"]["top_padding"] + 120
+    gap = STYLE["timeline"]["week_gap"]
+    return [top + i * gap for i in range(count)]
+
+
+def compute_flex_centers(layouts: list[dict], header_bottom: int) -> list[int]:
+    if not layouts:
+        return []
+
+    gap = STYLE["timeline"]["week_gap"]
+    top = STYLE["canvas"]["top_padding"] + 120
+    first_half = max(
+        STYLE["timeline"]["circle_radius"],
+        layouts[0]["lane_heights"]["left"] // 2,
+        layouts[0]["lane_heights"]["right"] // 2,
+    )
+    centers = [max(top, header_bottom + FLEX_HEADER_CLEARANCE + first_half)]
+
+    for idx in range(1, len(layouts)):
+        required_gap = gap
+        for side in ("left", "right"):
+            previous_height = layouts[idx - 1]["lane_heights"][side]
+            current_height = layouts[idx]["lane_heights"][side]
+            if previous_height and current_height:
+                required_gap = max(required_gap, previous_height // 2 + current_height // 2 + LANE_CLEARANCE)
+        centers.append(centers[-1] + required_gap)
+
+    return centers
+
+
+def compute_image_height(centers: list[int], layouts: list[dict], bottom_extra: int = 120, bottom_padding: int | None = None) -> int:
+    if not centers:
+        return STANDARD_OUTPUT_HEIGHT * RENDER_SCALE
+
+    bottom = STYLE["canvas"]["bottom_padding"] if bottom_padding is None else bottom_padding
+    node_radius = STYLE["timeline"]["circle_radius"]
+    content_bottom = 0
+    for center_y, layout in zip(centers, layouts):
+        content_bottom = max(
+            content_bottom,
+            center_y + node_radius,
+            center_y + layout["lane_heights"]["left"] // 2,
+            center_y + layout["lane_heights"]["right"] // 2,
+        )
+    return content_bottom + bottom + bottom_extra
+
+
+def compute_standard_image_height(count: int) -> int:
+    if count <= 0:
+        return STANDARD_OUTPUT_HEIGHT * RENDER_SCALE
+
+    gap = STYLE["timeline"]["week_gap"]
+    top = STYLE["canvas"]["top_padding"] + 120
+    bottom = STYLE["canvas"]["bottom_padding"]
+    return top + (count - 1) * gap + bottom + 120
+
+
+def detect_fit_fixed_issues(layouts: list[dict], centers: list[int], header_bottom: int) -> list[dict]:
+    issues: list[dict] = []
+    if layouts and centers:
+        for side in ("left", "right"):
+            lane_height = layouts[0]["lane_heights"][side]
+            lane_type = layouts[0]["lane_types"][side]
+            if lane_height and centers[0] - lane_height // 2 < header_bottom + HEADER_CLEARANCE:
+                issues.append({"week_index": 0, "side": side, "kind": "header", "target": lane_type})
+
+    # Compare each side independently across all week positions. In alternating timelines,
+    # the nearest collision risk is often two weeks apart on the same side.
+    for side in ("left", "right"):
+        side_indices = [idx for idx, layout in enumerate(layouts) if layout["lane_heights"][side] > 0]
+        for prev_idx, curr_idx in zip(side_indices, side_indices[1:]):
+            center_gap = centers[curr_idx] - centers[prev_idx]
+            previous_height = layouts[prev_idx]["lane_heights"][side]
+            current_height = layouts[curr_idx]["lane_heights"][side]
+            minimum_gap = previous_height // 2 + current_height // 2 + LANE_CLEARANCE
+            if center_gap < minimum_gap:
+                issues.append({
+                    "week_index": curr_idx,
+                    "side": side,
+                    "kind": "lane",
+                    "prev_week_index": prev_idx,
+                    "prev_target": layouts[prev_idx]["lane_types"][side],
+                    "target": layouts[curr_idx]["lane_types"][side],
+                })
+    return issues
+
+
+def fit_fixed_overrides(draw: ImageDraw.ImageDraw, weeks: list[dict], block_width: int, header_bottom: int) -> tuple[list[dict[str, int]], list[str]]:
+    overrides = [{"detail_size": STYLE["text"]["detail_size"], "pill_size": STYLE["text"]["pill_size"]} for _ in weeks]
+    centers = compute_fixed_centers(len(weeks))
+    warnings: list[str] = []
+    detail_shrinks = 0
+    pill_shrinks = 0
+    unresolved = False
+
+    def try_shrink(week_index: int, target: str | None) -> bool:
+        nonlocal detail_shrinks, pill_shrinks
+        if target == "block" and overrides[week_index]["detail_size"] > FIT_FIXED_MIN_DETAIL_SIZE:
+            overrides[week_index]["detail_size"] -= FIT_FIXED_STEP
+            detail_shrinks += 1
+            return True
+        if target == "pill" and overrides[week_index]["pill_size"] > FIT_FIXED_MIN_PILL_SIZE:
+            overrides[week_index]["pill_size"] -= FIT_FIXED_STEP
+            pill_shrinks += 1
+            return True
+        return False
+
+    for _ in range(500):
+        layouts = [
+            measure_week_layout(draw, week, block_width, week_side(idx), build_fonts(overrides[idx]))
+            for idx, week in enumerate(weeks)
+        ]
+        issues = detect_fit_fixed_issues(layouts, centers, header_bottom)
+        if not issues:
+            break
+
+        changed = False
+        for issue in issues:
+            candidates: list[tuple[int, str | None]] = []
+            if issue["kind"] == "lane" and issue.get("prev_week_index") is not None:
+                candidates.append((issue["prev_week_index"], issue.get("prev_target")))
+            candidates.append((issue["week_index"], issue.get("target")))
+
+            # Prefer shrinking detail blocks before pill text when resolving crowding.
+            candidates.sort(key=lambda item: 0 if item[1] == "block" else 1)
+
+            for week_index, target in candidates:
+                if try_shrink(week_index, target):
+                    changed = True
+                    break
+            if changed:
+                break
+        if not changed:
+            unresolved = True
+            break
+
+    if detail_shrinks:
+        warnings.append(f"detail text reduced {detail_shrinks} step(s) to preserve fixed canvas.")
+    if pill_shrinks:
+        warnings.append(f"pill text reduced {pill_shrinks} step(s) to preserve fixed canvas.")
+    if unresolved:
+        warnings.append("some content still risks crowding at minimum fixed-canvas text sizes.")
+
+    return overrides, warnings
 
 
 # ---------------------------
 # Render
 # ---------------------------
 
-def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = None) -> None:
+def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = None, layout_mode: str = DEFAULT_LAYOUT_MODE) -> list[str]:
     weeks = data["weeks"]
     width = STYLE["canvas"]["width"]
+    warnings: list[str] = []
 
     # Measurement pass
     tmp = Image.new("RGB", (width, 1000), STYLE["canvas"]["background"])
     draw = ImageDraw.Draw(tmp)
-    block_width = compute_block_width(draw, weeks)
+    block_width = compute_block_width(draw, weeks, FONTS)
+    header_bottom = measure_header_bottom(draw, data, FONTS)
 
-    gap = STYLE["timeline"]["week_gap"]
-    top = STYLE["canvas"]["top_padding"] + 120
-    bottom = STYLE["canvas"]["bottom_padding"]
-    height = top + (len(weeks) - 1) * gap + bottom + 120
+    if layout_mode == "fit-fixed":
+        week_overrides, fit_warnings = fit_fixed_overrides(draw, weeks, block_width, header_bottom)
+        warnings.extend(fit_warnings)
+        week_fonts = [build_fonts(overrides) for overrides in week_overrides]
+    else:
+        week_fonts = [FONTS for _ in weeks]
+
+    layouts = [
+        measure_week_layout(draw, week, block_width, week_side(idx), week_fonts[idx])
+        for idx, week in enumerate(weeks)
+    ]
+
+    if layout_mode == "flex-height":
+        ys = compute_flex_centers(layouts, header_bottom)
+        height = compute_image_height(ys, layouts, FLEX_BOTTOM_EXTRA, FLEX_BOTTOM_PADDING)
+    else:
+        ys = compute_fixed_centers(len(weeks))
+        height = compute_standard_image_height(len(weeks))
 
     image = Image.new("RGB", (width, height), STYLE["canvas"]["background"])
     draw = ImageDraw.Draw(image)
@@ -405,8 +628,6 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
     y += 16
     y = draw_centered_text(draw, y, "Learner Journey Map", FONTS["subtitle"], palette["text"], width)
 
-    ys = [top + i * gap for i in range(len(weeks))]
-
     # Main timeline line
     if ys:
         draw.line(
@@ -416,9 +637,9 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
         )
 
     for idx, week in enumerate(weeks):
-        side = "left" if idx % 2 == 0 else "right"
-        draw_week_block(draw, week, ys[idx], side, block_width)
-        draw_week_node(draw, int(week["week"]), ys[idx], bool(week.get("render_pill")))
+        side = week_side(idx)
+        draw_week_block(draw, week, ys[idx], side, block_width, week_fonts[idx])
+        draw_week_node(draw, int(week["week"]), ys[idx], bool(week.get("render_pill")), week_fonts[idx])
 
     output_png.parent.mkdir(parents=True, exist_ok=True)
 
@@ -445,10 +666,17 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
 
     final_image.save(output_png, "PNG")
 
+    if layout_mode == "flex-height" and final_image.height > STANDARD_OUTPUT_HEIGHT:
+        warnings.append(
+            f"layout mode flex-height expanded output height to {final_image.height}px from the standard {STANDARD_OUTPUT_HEIGHT}px."
+        )
+
     if output_pdf:
         rgb = final_image.convert("RGB")
         output_pdf.parent.mkdir(parents=True, exist_ok=True)
         rgb.save(output_pdf, "PDF", resolution=150.0)
+
+    return warnings
 
 
 # ---------------------------
@@ -461,6 +689,7 @@ def main() -> int:
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Output PNG path")
     parser.add_argument("--pdf", default=None, help="Optional output PDF path")
     parser.add_argument("--allow-warnings", action="store_true", help="Render even if extraction status is not APPROVED")
+    parser.add_argument("--layout-mode", default=DEFAULT_LAYOUT_MODE, choices=LAYOUT_MODES, help="Layout behavior: standard, fit-fixed, or flex-height")
     args = parser.parse_args()
 
     input_path = Path(args.input).resolve()
@@ -477,6 +706,7 @@ def main() -> int:
     print(f"[INFO] Input JSON       : {input_path}")
     print(f"[INFO] Extraction status: {status}")
     print(f"[INFO] Output PNG       : {output_png}")
+    print(f"[INFO] Layout mode      : {args.layout_mode}")
 
     if output_pdf:
         print(f"[INFO] Output PDF       : {output_pdf}")
@@ -487,10 +717,12 @@ def main() -> int:
             print(f"       - {issue}")
         return 2
 
-    render_journey_map(data, output_png, output_pdf)
+    render_warnings = render_journey_map(data, output_png, output_pdf, args.layout_mode)
     print(f"[OK] Wrote PNG: {output_png.name}")
     if output_pdf:
         print(f"[OK] Wrote PDF: {output_pdf.name}")
+    for warning in render_warnings:
+        print(f"[WARN] {warning}")
     return 0
 
 

@@ -41,11 +41,15 @@ EXPECTED_WEEKS = 12
 
 EXPORT_PDF = False
 ALLOW_WARNINGS = True
+DEFAULT_LAYOUT_MODE = "flex-height"
+# DEFAULT_LAYOUT_MODE = "fit-fixed"
+DEFAULT_RENDER_TARGET = "mlo"  # "ljm", "mlo", or "both"
 
 BASE_NAME = "student_journey_map"
 
 EXTRACTOR_SCRIPT = "extract_student_journey_map_v2.py"
 RENDERER_SCRIPT = "render_student_journey_map_png.py"
+MLO_RENDERER_SCRIPT = "render_module_learning_outcomes_png.py"
 
 
 # ---------------------------
@@ -83,11 +87,20 @@ def main() -> int:
     parser.add_argument("--base-name", default=BASE_NAME, help="Base filename for output files")
     parser.add_argument("--no-pdf", action="store_true", help="Do not create the PDF wrapper")
     parser.add_argument("--strict", action="store_true", help="Do not render PNG/PDF unless extraction status is APPROVED")
+    parser.add_argument("--layout-mode", default=DEFAULT_LAYOUT_MODE, choices=["standard", "fit-fixed", "flex-height"], help="Layout behavior for rendering")
+    parser.add_argument("--render-target", default=DEFAULT_RENDER_TARGET, choices=["ljm", "mlo", "both"], help="Which outputs to render")
+    parser.add_argument("--mlo-header-size", type=int, default=None, help="Override MLO header font size")
+    parser.add_argument("--mlo-code-size", type=int, default=None, help="Override MLO code font size")
+    parser.add_argument("--mlo-title-size", type=int, default=None, help="Override MLO title font size")
+    parser.add_argument("--mlo-desc-size", type=int, default=None, help="Override MLO description font size")
+    parser.add_argument("--mlo-line-spacing", type=int, default=None, help="Override MLO description line spacing")
+    parser.add_argument("--mlo-header-line-gap", type=int, default=None, help="Override MLO header line gap")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     extractor_path = script_dir / EXTRACTOR_SCRIPT
     renderer_path = script_dir / RENDERER_SCRIPT
+    mlo_renderer_path = script_dir / MLO_RENDERER_SCRIPT
 
     input_arg = Path(args.input)
     output_arg = Path(args.output_dir)
@@ -99,6 +112,7 @@ def main() -> int:
     review_path = output_dir / f"{args.base_name}_review.txt"
     json_path = output_dir / f"{args.base_name}_data.json"
     png_path = output_dir / f"{args.base_name}.png"
+    mlo_png_path = output_dir / f"{args.base_name}_mlos.png"
     pdf_path = output_dir / f"{args.base_name}.pdf"
 
     export_pdf = EXPORT_PDF and not args.no_pdf
@@ -116,6 +130,8 @@ def main() -> int:
     info(f"Expected weeks : {args.expected_weeks}")
     info(f"Export PDF     : {export_pdf}")
     info(f"Allow warnings : {allow_warnings}")
+    info(f"Layout mode    : {args.layout_mode}")
+    info(f"Render target  : {args.render_target}")
 
     if not input_docx.exists():
         fail(f"Input DOCX does not exist: {input_docx}")
@@ -127,6 +143,10 @@ def main() -> int:
 
     if not renderer_path.exists():
         fail(f"Renderer script not found: {renderer_path}")
+        return 1
+
+    if args.render_target in ("mlo", "both") and not mlo_renderer_path.exists():
+        fail(f"MLO renderer script not found: {mlo_renderer_path}")
         return 1
 
     print("\n[STEP 1] Extract and validate")
@@ -150,31 +170,67 @@ def main() -> int:
         fail("Extraction failed. PNG rendering skipped.")
         return rc
 
-    print("\n[STEP 2] Render PNG")
-    render_cmd = [
-        sys.executable,
-        str(renderer_path),
-        "--input",
-        str(json_path),
-        "--output",
-        str(png_path),
-    ]
+    if args.render_target in ("ljm", "both"):
+        print("\n[STEP 2A] Render LJM PNG")
+        render_cmd = [
+            sys.executable,
+            str(renderer_path),
+            "--input",
+            str(json_path),
+            "--output",
+            str(png_path),
+        ]
 
-    if export_pdf:
-        render_cmd.extend(["--pdf", str(pdf_path)])
+        if export_pdf:
+            render_cmd.extend(["--pdf", str(pdf_path)])
 
-    if allow_warnings:
-        render_cmd.append("--allow-warnings")
+        if allow_warnings:
+            render_cmd.append("--allow-warnings")
 
-    rc = run_command(render_cmd)
-    if rc != 0:
-        fail("PNG rendering failed.")
-        return rc
+        render_cmd.extend(["--layout-mode", args.layout_mode])
+
+        rc = run_command(render_cmd)
+        if rc != 0:
+            fail("LJM PNG rendering failed.")
+            return rc
+
+    if args.render_target in ("mlo", "both"):
+        print("\n[STEP 2B] Render MLO fixed-width PNG")
+        mlo_cmd = [
+            sys.executable,
+            str(mlo_renderer_path),
+            "--input",
+            str(json_path),
+            "--output",
+            str(mlo_png_path),
+        ]
+        if allow_warnings:
+            mlo_cmd.append("--allow-warnings")
+        if args.mlo_header_size is not None:
+            mlo_cmd.extend(["--header-size", str(args.mlo_header_size)])
+        if args.mlo_code_size is not None:
+            mlo_cmd.extend(["--code-size", str(args.mlo_code_size)])
+        if args.mlo_title_size is not None:
+            mlo_cmd.extend(["--title-size", str(args.mlo_title_size)])
+        if args.mlo_desc_size is not None:
+            mlo_cmd.extend(["--desc-size", str(args.mlo_desc_size)])
+        if args.mlo_line_spacing is not None:
+            mlo_cmd.extend(["--line-spacing", str(args.mlo_line_spacing)])
+        if args.mlo_header_line_gap is not None:
+            mlo_cmd.extend(["--header-line-gap", str(args.mlo_header_line_gap)])
+
+        rc = run_command(mlo_cmd)
+        if rc != 0:
+            fail("MLO PNG rendering failed.")
+            return rc
 
     print("\n[DONE]")
     ok(f"Review TXT : {review_path}")
     ok(f"JSON data  : {json_path}")
-    ok(f"PNG output : {png_path}")
+    if args.render_target in ("ljm", "both"):
+        ok(f"LJM PNG output : {png_path}")
+    if args.render_target in ("mlo", "both"):
+        ok(f"MLO PNG output : {mlo_png_path}")
     if export_pdf:
         ok(f"PDF output : {pdf_path}")
 
