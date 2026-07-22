@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from datetime import date, timedelta
 from pathlib import Path
@@ -37,6 +38,25 @@ DEFAULTS = {
 }
 
 PDF_PAGE_BG = (255, 255, 255)
+STALE_WORK_DIR_MAX_AGE_SECONDS = 2 * 60 * 60  # 2 hours
+
+
+def cleanup_stale_work_dirs() -> None:
+    # This app is public (Streamlit Community Cloud): uploaded docs and generated
+    # PNGs/PDFs land in a per-session temp dir that's only otherwise removed by the
+    # hidden "Reset workspace" button, so nothing else clears them. Sweep anything
+    # untouched for a while so uploads don't accumulate indefinitely on the host.
+    current = st.session_state.get("work_dir")
+    now = time.time()
+    for path in Path(tempfile.gettempdir()).glob("ljm_streamlit_*"):
+        if str(path) == current:
+            continue
+        try:
+            age = now - path.stat().st_mtime
+        except OSError:
+            continue
+        if age > STALE_WORK_DIR_MAX_AGE_SECONDS:
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def init_state() -> None:
@@ -46,6 +66,10 @@ def init_state() -> None:
     st.session_state.setdefault("last_message", "")
     st.session_state.setdefault("work_dir", None)
     st.session_state.setdefault("last_input_name", "ljm_output")
+
+    if not st.session_state.get("stale_cleanup_done"):
+        cleanup_stale_work_dirs()
+        st.session_state["stale_cleanup_done"] = True
 
 
 def ensure_work_dir() -> Path:
@@ -63,7 +87,8 @@ def ensure_work_dir() -> Path:
 def save_uploaded_file(uploaded_file, work_dir: Path) -> Path:
     input_dir = work_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
-    target = input_dir / uploaded_file.name
+    safe_name = Path(uploaded_file.name).name
+    target = input_dir / safe_name
     with target.open("wb") as handle:
         shutil.copyfileobj(uploaded_file, handle)
     return target

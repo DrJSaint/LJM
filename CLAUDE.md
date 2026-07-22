@@ -149,6 +149,31 @@ Monday–Friday with zero break awareness:
   Revisit/extend the CSV once 2036 approaches, or if someone schedules a spring term in a
   year outside that range.
 
+### 7) Public deployment hardening (2026-07-22, prompted by app going live)
+The app is now deployed publicly on Streamlit Community Cloud (user shares the link with
+colleagues, but it's reachable by anyone with the URL — no auth). That prompted a fact-check
+of some generic security reassurance the user got elsewhere, which undersold what actually
+happens in this codebase. Two real gaps, both fixed in `app.py`:
+- **Uploaded/generated files aren't ephemeral-in-memory — they're written to disk.**
+  `run_pipeline()` writes the uploaded `.docx` and every generated PNG/PDF into a real temp
+  directory (`tempfile.mkdtemp(prefix="ljm_streamlit_")`), and the only code that ever
+  removed it was the "Reset workspace" button — which is hidden behind `if False` (see
+  section 5's hidden-controls list). So on a public deployment, uploads accumulated on disk
+  indefinitely. Fixed with `cleanup_stale_work_dirs()`: on each new session's first
+  `init_state()` call, sweep any `ljm_streamlit_*` temp dir untouched for more than
+  `STALE_WORK_DIR_MAX_AGE_SECONDS` (2 hours), skipping the current session's own dir. Gated
+  by `st.session_state["stale_cleanup_done"]` so it's a cheap once-per-visitor glob, not a
+  per-rerun scan.
+- **Unsanitized upload filename.** `save_uploaded_file()` used to build the save path as
+  `input_dir / uploaded_file.name` with no sanitization — `uploaded_file.name` is
+  attacker-controllable if someone hits the upload endpoint directly rather than through the
+  browser file picker (classic path-traversal-via-filename). Fixed by joining
+  `Path(uploaded_file.name).name` instead, which strips any directory components before the
+  file is ever written.
+- Verified via Playwright against the running app (upload/generate still works after both
+  changes) and a standalone script confirming the stale-dir sweep only removes genuinely old
+  dirs and that the sanitized join can no longer escape the intended folder.
+
 ## Important PDF Logic
 In `app.py`:
 - Combined PDF is assembled from generated PNGs (`build_multipage_pdf`)
@@ -196,6 +221,13 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-07-22 follow-up 5)
+- User mentioned the app is now live and public on Streamlit Community Cloud, and shared a
+  separate conversation where a different Claude session had reassured them about the risk
+  (no data storage, "briefly in memory" at most). Fact-checked that against the actual code
+  and found it was imprecise/incomplete — see "Public deployment hardening" above for the two
+  real fixes made as a result (stale temp-dir cleanup, upload filename sanitization).
 
 ## Session Log (2026-07-22 follow-up 4)
 - Further sidebar feedback: removed the top-level "Options" header, and added a small scoped
