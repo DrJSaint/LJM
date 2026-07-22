@@ -66,6 +66,7 @@ def init_state() -> None:
     st.session_state.setdefault("last_message", "")
     st.session_state.setdefault("work_dir", None)
     st.session_state.setdefault("last_input_name", "ljm_output")
+    st.session_state.setdefault("last_uploaded_file_id", None)
 
     if not st.session_state.get("stale_cleanup_done"):
         cleanup_stale_work_dirs()
@@ -317,6 +318,12 @@ def main() -> None:
                 st.session_state["mlo_header_line_gap"] = st.number_input("Header line gap", min_value=0, max_value=30, value=int(st.session_state["mlo_header_line_gap"]))
 
     uploaded_file = st.file_uploader("Drag and drop your Learner Journey Map here, or click Upload to browse.", type=["docx"])
+
+    current_file_id = uploaded_file.file_id if uploaded_file is not None else None
+    if current_file_id != st.session_state["last_uploaded_file_id"]:
+        st.session_state["last_results"] = None
+        st.session_state["last_message"] = ""
+        st.session_state["last_uploaded_file_id"] = current_file_id
 
     col1, col2 = st.columns([1, 1])
     with col1:

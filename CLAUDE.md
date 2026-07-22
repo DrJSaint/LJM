@@ -106,6 +106,11 @@ In `app.py`:
   "Pipeline failed: [FAIL] ..." message — just the clean sentence itself. The full
   stdout/stderr is still captured into `last_message` but that expander stays hidden per the
   list above.
+- Uploading a different file (or removing the current one) immediately clears the previous
+  run's `last_results`/`last_message`/download buttons, rather than leaving them showing
+  stale downloads until the user clicks Generate again. Tracked via the upload widget's own
+  `uploaded_file.file_id` (unique per upload event — Streamlit's `UploadedFile` class) stored
+  in `st.session_state["last_uploaded_file_id"]`; a mismatch on rerun triggers the clear.
 
 ### 6) Term dates and Easter break (added 2026-07-22 follow-up)
 `extract_student_journey_map_v2.py` no longer computes week dates as pure sequential
@@ -251,6 +256,12 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-07-22 follow-up 7)
+- User noticed that uploading a second/third `.docx` in the same session left the previous
+  run's download buttons showing until they clicked Generate again. Fixed in `app.py` by
+  tracking the upload widget's `file_id` and clearing `last_results`/`last_message` as soon
+  as a different file is selected (or the file is removed) — see "Streamlit app" above.
 
 ## Session Log (2026-07-22 follow-up 6)
 - User reported two confusing error messages from bad test uploads (no table; empty/corrupt
