@@ -275,7 +275,6 @@ def build_ljm_alt_text(module_title:str, final_weeks:List[dict], break_window:Op
     if assessment_weeks:
         plural='s' if len(assessment_weeks)>1 else ''
         parts.append(f'Assessment milestones fall in week{plural} {", ".join(assessment_weeks)}.')
-    parts.append('See the accompanying review text for full week-by-week detail.')
     return ' '.join(parts)
 
 def build_mlo_alt_text(module_title:str, mlos:List[MLOExtract])->str:

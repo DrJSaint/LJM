@@ -229,18 +229,27 @@ def file_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def build_zip(results: dict[str, Path], base_name: str) -> bytes:
+def build_zip(results: dict[str, Path], base_name: str, alt_text: dict[str, str]) -> bytes:
     names = {
         "pdf": f"{base_name}_combined.pdf",
         "mlo_png": f"{base_name}_mlos.png",
         "ljm_png": f"{base_name}.png",
-        "review": f"{base_name}_review.txt",
+        # "review": f"{base_name}_review.txt",  # hidden for now — see main()'s commented-out download button
     }
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for key, filename in names.items():
             if key in results:
                 archive.write(results[key], arcname=filename)
+
+        if alt_text.get("ljm") or alt_text.get("mlo"):
+            lines = ["Suggested alt text (paste into Blackboard when embedding these images)", ""]
+            if alt_text.get("ljm"):
+                lines += ["LJM poster:", alt_text["ljm"], ""]
+            if alt_text.get("mlo"):
+                lines += ["MLO card:", alt_text["mlo"], ""]
+            archive.writestr(f"{base_name}_alt_text.txt", "\n".join(lines))
+
     return buffer.getvalue()
 
 
@@ -266,6 +275,27 @@ def main() -> None:
         /* Pull "LJM height options" up closer to the divider above it. */
         section[data-testid="stSidebar"] hr {
             margin-bottom: 0.25rem;
+        }
+        /* Alt-text code blocks (the only st.code usage in this app): default padding,
+           font size, and element spacing are sized for multi-line code, not one
+           line of copy text, so it reads as oversized and loosely related to the
+           download button it describes. Shrink the block and pull the caption +
+           block tight against the button above so they read as one attached unit;
+           normal spacing resumes before the next download button starts a new one. */
+        div[data-testid="stCode"] pre {
+            padding: 0.15rem 0.6rem;
+        }
+        div[data-testid="stCode"] pre,
+        div[data-testid="stCode"] code,
+        div[data-testid="stCode"] span {
+            font-size: 11px !important;
+            line-height: 1.25 !important;
+        }
+        /* The caption ("Suggested alt text...") always immediately precedes its
+           st.code block — use that to find it without a fragile text match. */
+        div[data-testid="stElementContainer"]:has(+ div[data-testid="stElementContainer"] > div[data-testid="stCode"]) {
+            margin-top: -0.85rem;
+            margin-bottom: -0.6rem;
         }
         </style>
         """,
@@ -366,10 +396,11 @@ def main() -> None:
     if results:
         st.subheader("Downloads")
         base_name = st.session_state.get("last_input_name", "ljm_output")
+        alt_text = st.session_state.get("last_alt_text") or {}
 
         st.download_button(
             "Download all as ZIP",
-            data=build_zip(results, base_name),
+            data=build_zip(results, base_name, alt_text),
             file_name=f"{base_name}_assets.zip",
             mime="application/zip",
             type="primary",
@@ -382,8 +413,6 @@ def main() -> None:
                 file_name=f"{base_name}_combined.pdf",
                 mime="application/pdf",
             )
-
-        alt_text = st.session_state.get("last_alt_text") or {}
 
         if "mlo_png" in results:
             st.download_button(
@@ -407,13 +436,14 @@ def main() -> None:
                 st.caption("Suggested alt text (paste into Blackboard when embedding this image):")
                 st.code(alt_text["ljm"], language=None)
 
-        if "review" in results:
-            st.download_button(
-                "Download review text",
-                data=file_bytes(results["review"]),
-                file_name=f"{base_name}_review.txt",
-                mime="text/plain",
-            )
+        if False:
+            if "review" in results:
+                st.download_button(
+                    "Download review text",
+                    data=file_bytes(results["review"]),
+                    file_name=f"{base_name}_review.txt",
+                    mime="text/plain",
+                )
 
         if False:
             if "data" in results:

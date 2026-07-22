@@ -13,6 +13,11 @@ The user prefers minimal UI customization — do not reintroduce heavy custom CS
 As of this session, the app always generates all assets together (PDF, both PNGs, review text) —
 there is no more PNG/PDF download-type choice. See "Streamlit app" below.
 
+As of the 2026-07-22 follow-up 9 session, the review-text download button is hidden (kept in
+code, not deleted) per user request — the review text is still generated and written to disk
+internally, it's just not exposed via the UI or the ZIP right now. The ZIP includes a small
+`_alt_text.txt` file (both suggested alt-text sentences) instead. See "Streamlit app" below.
+
 ## What Is Implemented
 
 ### 1) Core CLI pipeline (existing scripts)
@@ -91,14 +96,18 @@ In `app.py`:
   number input. Picking a non-Monday snaps forward/back to that week's Monday
   (`resolve_week1()`), shown via a caption rather than a hard validation error.
 - No more download-type choice — every run always generates the PDF, both PNGs (whichever the
-  render target implies), and the review text together.
-- Downloads are shown in this fixed order: **Download all as ZIP** (primary button, bundles
-  whichever of the four exist), then PDF, then MLO PNG, then LJM PNG, then review text.
+  render target implies), and the review text together (the review text is still generated and
+  written to disk — see the hidden-controls note below for why it has no download button).
+- Downloads are shown in this fixed order: **Download all as ZIP** (primary button), then PDF,
+  then MLO PNG, then LJM PNG.
 - Hidden (kept in code via `if False` blocks, not deleted):
   - Advanced MLO controls
   - Pipeline log expander
   - JSON download button
   - Reset workspace button
+  - Review text download button (2026-07-22 follow-up 9 — user wants it back later; it used to
+    sit after the LJM PNG button and in the ZIP as `_review.txt`, both now commented out rather
+    than removed)
 - Pipeline failures (subprocess non-zero exit, e.g. the Easter-year hard error below) now
   surface the actual last stderr line via `st.error(...)` instead of a bare exit code — see
   `run_pipeline()`. A leading `"[FAIL] "` tag (from the extractor's own `fail()` helper, see
@@ -117,6 +126,22 @@ In `app.py`:
   actual UX need here — there's no in-app image preview (no `st.image` anywhere) since the
   app is download-only, and PNG file metadata isn't read as alt text by Blackboard or any
   other embedding target, so this had to be copy-paste text rather than baked into the file.
+  - **Made compact (2026-07-22 follow-up 9):** Streamlit's default `st.code` padding/font-size/
+    line-height and inter-element spacing are sized for multi-line code, not one line of copy
+    text — the block read as oversized and only loosely associated with the download button it
+    describes. Fixed with scoped CSS in the same `st.markdown(..., unsafe_allow_html=True)`
+    style block (only `st.code` usage in the app, so the broad selectors are safe): code font
+    forced to 11px with `line-height: 1.25`, `pre` padding cut to `0.15rem 0.6rem`, and the
+    caption's own container gets negative top/bottom margins so it sits almost flush against
+    the download button above it and the code block below it. The caption is targeted via
+    `div[data-testid="stElementContainer"]:has(+ div[data-testid="stElementContainer"] >
+    div[data-testid="stCode"])` — "whatever precedes an `st.code` block" — rather than a text
+    match, since Streamlit gives no unique per-instance class to key off. Deliberately left
+    normal spacing between the code block and the *next* download button, so each PNG's
+    button+caption+code still reads as one attached group distinct from the next PNG's group.
+    Took three iterative rounds (padding alone, then padding+line-height, then font-size+tighter
+    margins) — the first two looked like real fixes in isolated measurement but still read as
+    "oversized" to the user until the line-height and inter-element gaps were both addressed.
 
 ### 6) Term dates and Easter break (added 2026-07-22 follow-up)
 `extract_student_journey_map_v2.py` no longer computes week dates as pure sequential
@@ -233,6 +258,17 @@ User confirmed that's what they wanted.
   Both strings are computed once in `main()`, added to the JSON payload as `"alt_text":
   {"ljm": ..., "mlo": ...}`, and also printed into the review `.txt` under a new "Suggested
   alt text" heading near the top.
+  - **Updated (2026-07-22 follow-up 9):** removed the trailing "See the accompanying review
+    text for full week-by-week detail" sentence from `build_ljm_alt_text()`. The review-text
+    download was hidden from the app in the same session (see "Streamlit app" above), so that
+    sentence would have pointed users at a file they could no longer get to from the app.
+    Confirmed with the user via AskUserQuestion rather than guessing whether to reword it
+    instead (e.g. to point at the new zipped `_alt_text.txt`) — they chose to drop it outright,
+    to be restored verbatim if/when the review-text download comes back. `build_mlo_alt_text()`
+    never had this trailing sentence, so it needed no change. Also fielded a question here on
+    whether ~40-word alt text is normal: yes — WCAG's "keep it short" guidance targets simple
+    images, while complex images (timelines, charts) are expected to pair a short(er) alt text
+    with a pointer to a fuller text equivalent, which is this app's existing pattern.
 - `app.py`: `run_pipeline()` re-reads the just-written JSON and caches
   `payload["alt_text"]` into `st.session_state["last_alt_text"]` (cheap — the JSON is small
   and already on disk; avoids threading a new return value through `run_pipeline`'s existing
@@ -254,8 +290,12 @@ In `app.py`:
   row 1 in the PDF instead of staying distinct (see the LJM poster's own background, which is cream —
   the MLO header itself is meant to read as white/blank space above the colored rows).
 - Page order: 1. MLO first, 2. LJM second (when both exist)
-- `build_zip(results, base_name)` bundles whichever of PDF / MLO PNG / LJM PNG / review text exist
-  into an in-memory zip (`io.BytesIO` + `zipfile`) for the "Download all as ZIP" button.
+- `build_zip(results, base_name, alt_text)` bundles whichever of PDF / MLO PNG / LJM PNG exist
+  into an in-memory zip (`io.BytesIO` + `zipfile`) for the "Download all as ZIP" button, plus a
+  generated `_alt_text.txt` (both suggested alt-text sentences, LJM then MLO, matching the
+  review `.txt`'s own label order) written straight into the zip via `archive.writestr(...)`
+  rather than read from disk. Review text is no longer bundled (2026-07-22 follow-up 9 — see
+  "Streamlit app" above); the `names` dict's `"review"` entry is commented out, not deleted.
 
 ## Local Run
 From repo root:
@@ -292,6 +332,24 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-07-22 follow-up 9)
+- User asked whether ~40-word alt text (the LJM poster's) is "normal." Answered inline: WCAG's
+  short-alt guidance targets simple images; complex images like this timeline poster are
+  expected to use a short(er) alt text paired with a fuller text equivalent elsewhere, which is
+  this app's existing design — no change needed for length itself.
+- User asked to make the alt-text `st.code` blocks tighter, three rounds in a row (padding →
+  padding+line-height → font-size+tighter caption-to-button margins) before it read as properly
+  compact. See "Streamlit app" above for the final CSS.
+- User asked to hide the review-text download for now (kept in code via `if False`, not
+  deleted; still generated internally) and drop it from the ZIP, replacing it with a small
+  `_alt_text.txt` bundling both suggested alt-text sentences. That broke the LJM alt text's own
+  trailing reference to "the accompanying review text" — resolved via AskUserQuestion; user
+  chose to drop that sentence rather than reword it or leave it dangling. See "Suggested alt
+  text for the PNGs" and "Important PDF Logic" above.
+- Verified via Playwright: review-text button no longer renders, the generated ZIP contains no
+  `_review.txt` but does contain `_alt_text.txt` with both sentences correctly, and the LJM alt
+  text no longer mentions the review text.
 
 ## Session Log (2026-07-22 follow-up 8)
 - User asked for alt text on the PNGs for accessibility. Clarified via AskUserQuestion first
