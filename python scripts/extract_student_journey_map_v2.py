@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, re
+import argparse, csv, json, re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 from docx import Document
 
 DEFAULT_WEEK_1_MONDAY='2026-09-21'
@@ -12,6 +12,8 @@ EXPECTED_WEEKS=12
 MAX_DETAIL_CHARS=70
 MAX_ASSESSMENT_CHARS=65
 MAX_MLO_DESC_CHARS=220
+PROJECT_ROOT=Path(__file__).resolve().parent.parent
+DEFAULT_EASTER_CONFIG=PROJECT_ROOT/'config'/'easter_sunday_dates_2027_2036.csv'
 
 @dataclass
 class WeekExtract:
@@ -29,11 +31,87 @@ def ordinal(n:int)->str:
 def month_label(d:date)->str:
     return {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sept',10:'Oct',11:'Nov',12:'Dec'}[d.month]
 
-def week_date_label(week:int, week_1_monday:date)->str:
-    start=week_1_monday+timedelta(days=(week-1)*7); end=start+timedelta(days=4)
+def format_date_range(start:date, end:date)->str:
     if start.month==end.month:
         return f'Week ({ordinal(start.day)} - {ordinal(end.day)} {month_label(end)})'
     return f'Week ({ordinal(start.day)} {month_label(start)} - {ordinal(end.day)} {month_label(end)})'
+
+def format_break_range(start:date, end:date)->str:
+    if start.month==end.month:
+        return f'({ordinal(start.day)} - {ordinal(end.day)} {month_label(end)})'
+    return f'({ordinal(start.day)} {month_label(start)} - {ordinal(end.day)} {month_label(end)})'
+
+def load_easter_sundays(csv_path:Path)->Dict[int,date]:
+    result:Dict[int,date]={}
+    with csv_path.open(newline='', encoding='utf-8') as handle:
+        rows=list(csv.reader(handle))
+    for row in rows[1:]:
+        if not row or not row[0].strip(): continue
+        d=datetime.strptime(row[0].strip(), '%d/%m/%Y').date()
+        result[d.year]=d
+    return result
+
+# Easter Sunday always falls within this window (22 Mar - 25 Apr) for any given year,
+# regardless of the exact date. Used to skip requiring table coverage for years a term
+# never gets close to, so an ordinary autumn term doesn't need next year's row filled in.
+EASTER_WINDOW_EARLIEST=(3,22)
+EASTER_WINDOW_LATEST=(4,25)
+
+def compute_week_dates(weeks:List['WeekExtract'], week_1_monday:date, easter_dates:Dict[int,date])->Tuple[List[dict], Optional[Tuple[date,date]]]:
+    n=len(weeks)
+    if n==0: return [], None
+
+    naive_start=week_1_monday
+    naive_end=week_1_monday+timedelta(days=(n-1)*7+4)
+
+    candidate_years=set()
+    for year in {naive_start.year, naive_end.year}:
+        window_start=date(year, *EASTER_WINDOW_EARLIEST)
+        window_end=date(year, *EASTER_WINDOW_LATEST)
+        if naive_start<=window_end and naive_end>=window_start:
+            candidate_years.add(year)
+
+    missing=sorted(y for y in candidate_years if y not in easter_dates)
+    if missing:
+        years_text=', '.join(str(y) for y in missing)
+        raise ValueError(
+            f'No Easter Sunday date found for year(s) {years_text} in the Easter '
+            f'lookup table ({DEFAULT_EASTER_CONFIG.name}). Add the missing year(s) '
+            'before generating a term that spans them.'
+        )
+
+    break_window:Optional[Tuple[date,date]]=None
+    for year in sorted(candidate_years):
+        easter_sunday=easter_dates[year]
+        if naive_start<=easter_sunday<=naive_end:
+            break_window=(easter_sunday-timedelta(days=6), easter_sunday+timedelta(days=5))
+            break
+
+    def make_break_entry(window:Tuple[date,date])->dict:
+        break_range=format_break_range(window[0], window[1])
+        return {'week':None,'date_label':break_range,'title':'','detail':'','assessment':f'Easter Break\n{break_range}','render_pill':True,'kind':'break'}
+
+    result:List[dict]=[]
+    offset_days=0
+    break_inserted=False
+    for w in weeks:
+        start=week_1_monday+timedelta(days=(w.week-1)*7+offset_days)
+        if break_window and not break_inserted and start>=break_window[0]:
+            result.append(make_break_entry(break_window))
+            offset_days+=14
+            break_inserted=True
+            start=week_1_monday+timedelta(days=(w.week-1)*7+offset_days)
+
+        end=start+timedelta(days=4)
+        entry=asdict(w)
+        entry['date_label']=format_date_range(start, end)
+        entry['kind']='week'
+        result.append(entry)
+
+    if break_window and not break_inserted:
+        result.append(make_break_entry(break_window))
+
+    return result, break_window
 
 def clean_text(text:str)->str:
     return re.sub(r'\s+', ' ', text.replace('\u00a0',' ')).strip()
@@ -139,7 +217,7 @@ def extract_module_learning_outcomes(doc)->List[MLOExtract]:
         outcomes.append(MLOExtract(code,title,desc))
     return outcomes
 
-def extract_weeks(docx_path:Path, week_1_monday:date):
+def extract_weeks(docx_path:Path):
     doc=Document(docx_path); module_title=extract_module_title(doc); table=find_week_table(doc)
     if table is None: raise ValueError('Could not find week table')
     idx=header_index_map(table); weeks=[]
@@ -147,7 +225,7 @@ def extract_weeks(docx_path:Path, week_1_monday:date):
         wt=clean_text(row.cells[idx['week']].text); m=re.search(r'\d+', wt)
         if not m: continue
         n=int(m.group(0)); title,detail=extract_title_and_detail(row.cells[idx['title_topics']]); assessment=extract_assessment(row.cells[idx['assessments']])
-        weeks.append(WeekExtract(n, week_date_label(n, week_1_monday), title, detail, assessment, bool(assessment.strip())))
+        weeks.append(WeekExtract(n, '', title, detail, assessment, bool(assessment.strip())))
     mlos=extract_module_learning_outcomes(doc)
     return module_title, sorted(weeks, key=lambda w:w.week), mlos
 
@@ -180,15 +258,22 @@ def validate_mlos(mlos:List[MLOExtract]):
 def status(issues): return 'APPROVED' if not issues else 'NEEDS REVIEW'
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--review', required=True); ap.add_argument('--json', required=True); ap.add_argument('--week1', default=DEFAULT_WEEK_1_MONDAY); ap.add_argument('--expected-weeks', type=int, default=EXPECTED_WEEKS)
-    a=ap.parse_args(); week1=datetime.strptime(a.week1,'%Y-%m-%d').date(); module,weeks,mlos=extract_weeks(Path(a.input), week1); issues=validate_weeks(weeks,a.expected_weeks)+validate_mlos(mlos)
-    payload={'module_title':module,'week_1_monday':week1.isoformat(),'expected_weeks':a.expected_weeks,'weeks_found':len(weeks),'mlos_found':len(mlos),'extraction_status':status(issues),'issues':issues,'weeks':[asdict(w) for w in weeks],'mlos':[asdict(m) for m in mlos]}
+    ap=argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--review', required=True); ap.add_argument('--json', required=True); ap.add_argument('--week1', default=DEFAULT_WEEK_1_MONDAY); ap.add_argument('--expected-weeks', type=int, default=EXPECTED_WEEKS); ap.add_argument('--easter-config', default=str(DEFAULT_EASTER_CONFIG))
+    a=ap.parse_args(); week1=datetime.strptime(a.week1,'%Y-%m-%d').date(); module,weeks,mlos=extract_weeks(Path(a.input)); issues=validate_weeks(weeks,a.expected_weeks)+validate_mlos(mlos)
+    easter_dates=load_easter_sundays(Path(a.easter_config))
+    final_weeks,break_window=compute_week_dates(weeks, week1, easter_dates)
+    easter_break_payload={'start':break_window[0].isoformat(),'end':break_window[1].isoformat()} if break_window else None
+    payload={'module_title':module,'week_1_monday':week1.isoformat(),'expected_weeks':a.expected_weeks,'weeks_found':len(weeks),'mlos_found':len(mlos),'extraction_status':status(issues),'issues':issues,'weeks':final_weeks,'easter_break':easter_break_payload,'mlos':[asdict(m) for m in mlos]}
     Path(a.json).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
-    lines=[f'{module} — Student Journey Map Extraction Review','='*72,'',f'Extraction status : {status(issues)}',f'Weeks found       : {len(weeks)}',f'Expected weeks    : {a.expected_weeks}',f'MLOs found        : {len(mlos)}',f'Week 1 Monday     : {week1.strftime("%d/%m/%Y")}','Date rule         : Monday to Friday','','Validation issues','-----------------']
+    easter_break_line=f'{break_window[0].strftime("%d/%m/%Y")} - {break_window[1].strftime("%d/%m/%Y")} (inserted)' if break_window else 'none (term does not cover Easter)'
+    lines=[f'{module} — Student Journey Map Extraction Review','='*72,'',f'Extraction status : {status(issues)}',f'Weeks found       : {len(weeks)}',f'Expected weeks    : {a.expected_weeks}',f'MLOs found        : {len(mlos)}',f'Week 1 Monday     : {week1.strftime("%d/%m/%Y")}','Date rule         : Monday to Friday',f'Easter break      : {easter_break_line}','','Validation issues','-----------------']
     lines += [f'- {i}' for i in issues] if issues else ['None']
     lines += ['','Extracted week data','-------------------','']
-    for w in weeks:
-        lines += [f'Week {w.week}',f'  Date       : {w.date_label}',f'  Title      : {w.title}',f'  Detail     : {w.detail}',f'  Assessment : {w.assessment}',f'  Render pill: {w.render_pill}','']
+    for w in final_weeks:
+        if w['kind']=='break':
+            lines += ['Easter Break',f'  Date       : {easter_break_line}','']
+        else:
+            lines += [f'Week {w["week"]}',f'  Date       : {w["date_label"]}',f'  Title      : {w["title"]}',f'  Detail     : {w["detail"]}',f'  Assessment : {w["assessment"]}',f'  Render pill: {w["render_pill"]}','']
     lines += ['','Extracted MLO data','------------------','']
     for m in mlos:
         lines += [f'{m.code}',f'  Title       : {m.title}',f'  Description : {m.description}','']

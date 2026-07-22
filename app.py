@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import date, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -18,9 +19,15 @@ APP_SUBTITLE = "Upload your Learner Journey Map to generate student-facing PDFs 
 REPO_ROOT = Path(__file__).resolve().parent
 PIPELINE_SCRIPT = REPO_ROOT / "python scripts" / "make_student_journey_map.py"
 
+WEEK_COUNT_OPTIONS = ["10 weeks", "12 weeks", "Custom"]
+WEEK_COUNT_VALUES = {"10 weeks": 10, "12 weeks": 12}
+
 DEFAULTS = {
     "render_target": "both",
     "layout_mode": "flex-height",
+    "week1": date(2026, 9, 21),
+    "week_count_choice": "12 weeks",
+    "expected_weeks_custom": 12,
     "mlo_header_size": 52,
     "mlo_code_size": 52,
     "mlo_title_size": 37,
@@ -62,6 +69,18 @@ def save_uploaded_file(uploaded_file, work_dir: Path) -> Path:
     return target
 
 
+def resolve_week1() -> date:
+    picked = st.session_state["week1"]
+    return picked - timedelta(days=picked.weekday())
+
+
+def resolve_expected_weeks() -> int:
+    choice = st.session_state["week_count_choice"]
+    if choice in WEEK_COUNT_VALUES:
+        return WEEK_COUNT_VALUES[choice]
+    return int(st.session_state["expected_weeks_custom"])
+
+
 def build_command(input_path: Path, output_dir: Path) -> list[str]:
     base_name = input_path.stem
     command = [
@@ -77,6 +96,10 @@ def build_command(input_path: Path, output_dir: Path) -> list[str]:
         st.session_state["render_target"],
         "--layout-mode",
         st.session_state["layout_mode"],
+        "--week1",
+        resolve_week1().isoformat(),
+        "--expected-weeks",
+        str(resolve_expected_weeks()),
         "--no-pdf",
     ]
 
@@ -131,7 +154,9 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
     st.session_state["last_message"] = completed.stdout + ("\n" + completed.stderr if completed.stderr else "")
 
     if completed.returncode != 0:
-        raise RuntimeError(f"Pipeline failed with exit code {completed.returncode}")
+        stderr_lines = [line for line in completed.stderr.strip().splitlines() if line]
+        reason = stderr_lines[-1] if stderr_lines else f"exit code {completed.returncode}"
+        raise RuntimeError(f"Pipeline failed: {reason}")
 
     base_name = input_path.stem
     results: dict[str, Path] = {}
@@ -201,6 +226,10 @@ def main() -> None:
         div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:not(:disabled) p {
             color: #E7F95D !important;
         }
+        /* Pull "LJM height options" up closer to the divider above it. */
+        section[data-testid="stSidebar"] hr {
+            margin-bottom: 0.25rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -210,7 +239,6 @@ def main() -> None:
     st.subheader(APP_SUBTITLE)
 
     with st.sidebar:
-        st.header("Options")
         if False:
             st.session_state["render_target"] = st.radio(
                 "Render target",
@@ -218,6 +246,30 @@ def main() -> None:
                 index=["ljm", "mlo", "both"].index(st.session_state["render_target"]),
                 format_func=lambda value: {"ljm": "LJM", "mlo": "MLO", "both": "Both"}[value],
             )
+        st.subheader("Term Start Picker")
+        st.session_state["week1"] = st.date_input("Term start (Week 1 Monday)", value=st.session_state["week1"])
+        snapped_monday = resolve_week1()
+        snapped_friday = snapped_monday + timedelta(days=4)
+        st.caption(f"Week 1 will run Mon {snapped_monday:%d %b %Y} – Fri {snapped_friday:%d %b %Y}.")
+
+        st.session_state["week_count_choice"] = st.radio(
+            "Number of teaching weeks",
+            options=WEEK_COUNT_OPTIONS,
+            index=WEEK_COUNT_OPTIONS.index(st.session_state["week_count_choice"]),
+            horizontal=True,
+        )
+        if st.session_state["week_count_choice"] == "Custom":
+            st.session_state["expected_weeks_custom"] = st.number_input(
+                "Custom week count",
+                min_value=1,
+                max_value=30,
+                value=int(st.session_state["expected_weeks_custom"]),
+            )
+        st.caption("A 2-week Easter break is inserted automatically if the term covers it.")
+
+        st.divider()
+
+        st.subheader("LJM height options")
         st.session_state["layout_mode"] = st.radio(
             "Layout mode",
             options=["flex-height", "standard", "fit-fixed"],

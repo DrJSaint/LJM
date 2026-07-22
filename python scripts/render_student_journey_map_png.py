@@ -236,25 +236,27 @@ def text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -
 
 
 def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> List[str]:
-    text = re.sub(r"\s+", " ", text.strip())
-    if not text:
-        return []
-
-    words = text.split(" ")
     lines: List[str] = []
-    current: List[str] = []
 
-    for word in words:
-        trial = " ".join(current + [word]).strip()
-        w, _ = text_size(draw, trial, font)
-        if w <= max_width or not current:
-            current.append(word)
-        else:
+    for paragraph in text.split("\n"):
+        collapsed = re.sub(r"\s+", " ", paragraph.strip())
+        if not collapsed:
+            continue
+
+        words = collapsed.split(" ")
+        current: List[str] = []
+
+        for word in words:
+            trial = " ".join(current + [word]).strip()
+            w, _ = text_size(draw, trial, font)
+            if w <= max_width or not current:
+                current.append(word)
+            else:
+                lines.append(" ".join(current))
+                current = [word]
+
+        if current:
             lines.append(" ".join(current))
-            current = [word]
-
-    if current:
-        lines.append(" ".join(current))
 
     return lines
 
@@ -318,7 +320,7 @@ def compute_block_width(draw: ImageDraw.ImageDraw, weeks: list[dict], fonts: Map
     return max(MIN_BLOCK_WIDTH, widest_date + BLOCK_WIDTH_DATE_PADDING)
 
 
-def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
+def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, fonts: Mapping[str, ImageFont.ImageFont], fill: str | None = None) -> int:
     palette = STYLE["palette"]
     max_width = STYLE["pill"]["max_width"]
     lines, width, height = pill_size(draw, text, max_width, fonts)
@@ -332,7 +334,7 @@ def draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, side: str, f
         rect_x = timeline_x + node_outer_radius - node_overlap
 
     rect = [rect_x, y, rect_x + width, y + height]
-    draw.rounded_rectangle(rect, radius=STYLE["pill"]["radius"], fill=palette["green"])
+    draw.rounded_rectangle(rect, radius=STYLE["pill"]["radius"], fill=fill or palette["green"])
 
     lines_heights = [text_size(draw, line, fonts["pill"])[1] for line in lines]
     total_text_height = sum(lines_heights) + max(0, len(lines) - 1) * 5
@@ -422,6 +424,33 @@ def draw_week_node(draw: ImageDraw.ImageDraw, week_number: int, y: int, highligh
     draw.text((x - w // 2, y - h // 2 - NODE_LABEL_Y_OFFSET), label, font=active_fonts["circle"], fill=label_fill)
 
 
+def draw_break_icon(draw: ImageDraw.ImageDraw, x: int, y: int, size: int, color: str) -> None:
+    # Simple sitting-bunny silhouette: body, head, two ears.
+    body_r = size * 0.38
+    body_cy = y + size * 0.22
+    draw.ellipse([x - body_r, body_cy - body_r, x + body_r, body_cy + body_r], fill=color)
+
+    head_r = size * 0.26
+    head_cy = y - size * 0.14
+    draw.ellipse([x - head_r, head_cy - head_r, x + head_r, head_cy + head_r], fill=color)
+
+    ear_w = size * 0.15
+    ear_len = size * 0.5
+    ear_offset_x = size * 0.15
+    ear_bottom = head_cy - head_r * 0.4
+    ear_top = ear_bottom - ear_len
+    for dx in (-ear_offset_x, ear_offset_x):
+        ear_cx = x + dx
+        draw.ellipse([ear_cx - ear_w / 2, ear_top, ear_cx + ear_w / 2, ear_bottom], fill=color)
+
+
+def draw_break_node(draw: ImageDraw.ImageDraw, y: int, fill_color: str, icon_color: str) -> None:
+    x = STYLE["timeline"]["x"]
+    r = STYLE["timeline"]["circle_radius"]
+    draw.ellipse([x - r, y - r, x + r, y + r], fill=fill_color)
+    draw_break_icon(draw, x, y, r, icon_color)
+
+
 def measure_header_bottom(draw: ImageDraw.ImageDraw, data: dict, fonts: Mapping[str, ImageFont.ImageFont]) -> int:
     y = TITLE_START_Y
     y = draw_centered_text(draw, y, data["module_title"], fonts["title"], STYLE["palette"]["text"], STYLE["canvas"]["width"])
@@ -435,6 +464,21 @@ def week_side(index: int) -> str:
 
 
 def measure_week_layout(draw: ImageDraw.ImageDraw, week: dict, block_width: int, side: str, fonts: Mapping[str, ImageFont.ImageFont]) -> dict:
+    if week.get("kind") == "break":
+        _, _, pill_height = pill_size(draw, week["assessment"], STYLE["pill"]["max_width"], fonts)
+        lane_heights = {"left": 0, "right": 0}
+        lane_types: dict[str, str | None] = {"left": None, "right": None}
+        lane_heights[side] = pill_height
+        lane_types[side] = "pill"
+        return {
+            "side": side,
+            "block_height": 0,
+            "pill_height": pill_height,
+            "pill_side": side,
+            "lane_heights": lane_heights,
+            "lane_types": lane_types,
+        }
+
     block_height = measure_week_block(draw, week, block_width, fonts)
     pill_height = 0
     pill_side = None
@@ -660,8 +704,13 @@ def render_journey_map(data: dict, output_png: Path, output_pdf: Path | None = N
 
     for idx, week in enumerate(weeks):
         side = week_side(idx)
-        draw_week_block(draw, week, ys[idx], side, block_width, week_fonts[idx])
-        draw_week_node(draw, int(week["week"]), ys[idx], bool(week.get("render_pill")), week_fonts[idx])
+        if week.get("kind") == "break":
+            pill_y = ys[idx] - layouts[idx]["pill_height"] // 2 - TEXT_BASELINE_NUDGE
+            draw_pill(draw, 0, pill_y, week["assessment"], side, week_fonts[idx], fill=palette["accent"])
+            draw_break_node(draw, ys[idx], palette["accent"], palette["node"])
+        else:
+            draw_week_block(draw, week, ys[idx], side, block_width, week_fonts[idx])
+            draw_week_node(draw, int(week["week"]), ys[idx], bool(week.get("render_pill")), week_fonts[idx])
 
     output_png.parent.mkdir(parents=True, exist_ok=True)
 
