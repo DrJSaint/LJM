@@ -169,6 +169,8 @@ streamlit run .\app.py
 
 The demo uploads a Word document, runs the existing pipeline, and always generates all assets together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. Downloads are offered individually in that order, plus a "Download all as ZIP" button. Uploading a different file (or removing the current one) clears any previous run's download buttons.
 
+Each PNG's download button is followed by a suggested alt-text sentence (with a one-click copy icon) — paste it into Blackboard's own alt-text field when you embed the image there, since that's the only place alt text actually reaches a screen reader. The same text is also written into the review `.txt`. It's a short summary rather than a full transcript by design — the review `.txt` itself is the accompanying full-text equivalent for anyone using assistive technology.
+
 The sidebar has two sections: **Term Start Picker** (the Week 1 Monday date and a strict 10/12/Custom teaching-week-count control — see "Term Dates and the Easter Break" above) and **LJM height options** (the layout-mode radio). It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
 
 ## Git Notes

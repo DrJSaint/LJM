@@ -111,6 +111,12 @@ In `app.py`:
   stale downloads until the user clicks Generate again. Tracked via the upload widget's own
   `uploaded_file.file_id` (unique per upload event — Streamlit's `UploadedFile` class) stored
   in `st.session_state["last_uploaded_file_id"]`; a mismatch on rerun triggers the clear.
+- Each generated PNG download button is followed by a `st.code(...)` block showing suggested
+  alt text (see section 9), read out of the generated JSON's `"alt_text"` field and cached in
+  `st.session_state["last_alt_text"]`. `st.code` gives a built-in copy icon, which is the
+  actual UX need here — there's no in-app image preview (no `st.image` anywhere) since the
+  app is download-only, and PNG file metadata isn't read as alt text by Blackboard or any
+  other embedding target, so this had to be copy-paste text rather than baked into the file.
 
 ### 6) Term dates and Easter break (added 2026-07-22 follow-up)
 `extract_student_journey_map_v2.py` no longer computes week dates as pure sequential
@@ -209,6 +215,36 @@ file`. Investigated both in `extract_student_journey_map_v2.py`:
   work — see the `run_pipeline()` note in "Streamlit app" above for the matching app.py-side
   cleanup (stripping the leading `[FAIL]` tag so the app doesn't show it doubled).
 
+### 9) Suggested alt text for the PNGs (2026-07-22, accessibility request)
+User asked for "alt text" on the generated PNGs. Clarified with the user first since a PNG
+file has no standard field an LMS reads as alt text, and the app has no in-app image preview
+(`st.image`) to attach one to either — alt text only takes effect where an image gets
+*embedded* (e.g. Blackboard's own alt-text field when inserting an image), so the only
+generally useful thing to build was **copy-pasteable suggested text**, not file metadata.
+User confirmed that's what they wanted.
+- `extract_student_journey_map_v2.py`: `build_ljm_alt_text()` and `build_mlo_alt_text()`
+  generate one descriptive sentence per image from data already extracted — module title,
+  teaching-week count and date range, which weeks carry assessment pills, whether an Easter
+  break is present (LJM); module title and each MLO code/title (MLO card). Deliberately kept
+  short rather than a full transcript — the review `.txt` already serves as a complete text
+  equivalent, so the alt text explicitly points to it ("See the accompanying review text for
+  full week-by-week detail") rather than duplicating it. This is the standard accessibility
+  pattern for complex images: short alt text + an adjacent full-text alternative.
+  Both strings are computed once in `main()`, added to the JSON payload as `"alt_text":
+  {"ljm": ..., "mlo": ...}`, and also printed into the review `.txt` under a new "Suggested
+  alt text" heading near the top.
+- `app.py`: `run_pipeline()` re-reads the just-written JSON and caches
+  `payload["alt_text"]` into `st.session_state["last_alt_text"]` (cheap — the JSON is small
+  and already on disk; avoids threading a new return value through `run_pipeline`'s existing
+  `dict[str, Path]` return type). Cleared on new upload same as `last_results`. Each PNG's
+  download button is immediately followed by a `st.caption` + `st.code(text, language=None)`
+  showing that image's suggested alt text — `st.code` was chosen specifically because it
+  gives a built-in copy icon for free, which is the actual interaction a user needs here
+  (copy → paste into Blackboard's alt-text field), without any custom CSS/JS.
+- Verified via Playwright: generated a poster+MLO card, confirmed exactly two `st.code`
+  blocks render with the expected wording (module title, week count/date range, assessment
+  weeks, Easter break mention, MLO codes/titles).
+
 ## Important PDF Logic
 In `app.py`:
 - Combined PDF is assembled from generated PNGs (`build_multipage_pdf`)
@@ -256,6 +292,14 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-07-22 follow-up 8)
+- User asked for alt text on the PNGs for accessibility. Clarified via AskUserQuestion first
+  since "alt text on a PNG" is ambiguous (no in-app image preview, and file metadata isn't
+  read by Blackboard) — user confirmed they wanted copy-pasteable suggested text, not
+  embedded file metadata. Added generated alt-text sentences to the JSON/review-text output
+  and a copy-friendly `st.code` display next to each PNG's download button in the app. See
+  "Suggested alt text for the PNGs" above.
 
 ## Session Log (2026-07-22 follow-up 7)
 - User noticed that uploading a second/third `.docx` in the same session left the previous

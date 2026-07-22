@@ -261,6 +261,29 @@ def validate_mlos(mlos:List[MLOExtract]):
 
 def status(issues): return 'APPROVED' if not issues else 'NEEDS REVIEW'
 
+def build_ljm_alt_text(module_title:str, final_weeks:List[dict], break_window:Optional[Tuple[date,date]])->str:
+    teaching_weeks=[w for w in final_weeks if w['kind']=='week']
+    if not teaching_weeks:
+        return f'Learner journey map for {module_title}.'
+    n=len(teaching_weeks)
+    first_label=teaching_weeks[0]['date_label']
+    last_label=teaching_weeks[-1]['date_label']
+    assessment_weeks=[str(w['week']) for w in teaching_weeks if w.get('render_pill') and w.get('assessment','').strip()]
+    parts=[f'Learner journey map for {module_title} — a {n}-week teaching timeline from {first_label} to {last_label}.']
+    if break_window:
+        parts.append('Includes a two-week Easter break part-way through the term.')
+    if assessment_weeks:
+        plural='s' if len(assessment_weeks)>1 else ''
+        parts.append(f'Assessment milestones fall in week{plural} {", ".join(assessment_weeks)}.')
+    parts.append('See the accompanying review text for full week-by-week detail.')
+    return ' '.join(parts)
+
+def build_mlo_alt_text(module_title:str, mlos:List[MLOExtract])->str:
+    if not mlos:
+        return f'Module learning outcomes for {module_title}.'
+    items='; '.join(f'{m.code}: {m.title}' for m in mlos)
+    return f'Module learning outcomes for {module_title} — {len(mlos)} outcomes: {items}.'
+
 def fail(message:str)->None:
     print(f'[FAIL] {message}', file=sys.stderr)
     sys.exit(1)
@@ -292,10 +315,11 @@ def main():
     except ValueError as exc:
         fail(str(exc))
     easter_break_payload={'start':break_window[0].isoformat(),'end':break_window[1].isoformat()} if break_window else None
-    payload={'module_title':module,'week_1_monday':week1.isoformat(),'expected_weeks':a.expected_weeks,'weeks_found':len(weeks),'mlos_found':len(mlos),'extraction_status':status(issues),'issues':issues,'weeks':final_weeks,'easter_break':easter_break_payload,'mlos':[asdict(m) for m in mlos]}
+    alt_text={'ljm':build_ljm_alt_text(module, final_weeks, break_window),'mlo':build_mlo_alt_text(module, mlos)}
+    payload={'module_title':module,'week_1_monday':week1.isoformat(),'expected_weeks':a.expected_weeks,'weeks_found':len(weeks),'mlos_found':len(mlos),'extraction_status':status(issues),'issues':issues,'weeks':final_weeks,'easter_break':easter_break_payload,'alt_text':alt_text,'mlos':[asdict(m) for m in mlos]}
     Path(a.json).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
     easter_break_line=f'{break_window[0].strftime("%d/%m/%Y")} - {break_window[1].strftime("%d/%m/%Y")} (inserted)' if break_window else 'none (term does not cover Easter)'
-    lines=[f'{module} — Student Journey Map Extraction Review','='*72,'',f'Extraction status : {status(issues)}',f'Weeks found       : {len(weeks)}',f'Expected weeks    : {a.expected_weeks}',f'MLOs found        : {len(mlos)}',f'Week 1 Monday     : {week1.strftime("%d/%m/%Y")}','Date rule         : Monday to Friday',f'Easter break      : {easter_break_line}','','Validation issues','-----------------']
+    lines=[f'{module} — Student Journey Map Extraction Review','='*72,'',f'Extraction status : {status(issues)}',f'Weeks found       : {len(weeks)}',f'Expected weeks    : {a.expected_weeks}',f'MLOs found        : {len(mlos)}',f'Week 1 Monday     : {week1.strftime("%d/%m/%Y")}','Date rule         : Monday to Friday',f'Easter break      : {easter_break_line}','','Suggested alt text (for embedding the PNGs, e.g. in Blackboard)','-----------------------------------------------------------------',f'LJM poster : {alt_text["ljm"]}',f'MLO card   : {alt_text["mlo"]}','','Validation issues','-----------------']
     lines += [f'- {i}' for i in issues] if issues else ['None']
     lines += ['','Extracted week data','-------------------','']
     for w in final_weeks:

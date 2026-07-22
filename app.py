@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,7 @@ def init_state() -> None:
         st.session_state.setdefault(key, value)
     st.session_state.setdefault("last_results", None)
     st.session_state.setdefault("last_message", "")
+    st.session_state.setdefault("last_alt_text", {})
     st.session_state.setdefault("work_dir", None)
     st.session_state.setdefault("last_input_name", "ljm_output")
     st.session_state.setdefault("last_uploaded_file_id", None)
@@ -200,6 +202,11 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
         results["review"] = review
     if data.exists():
         results["data"] = data
+        try:
+            payload = json.loads(data.read_text(encoding="utf-8"))
+            st.session_state["last_alt_text"] = payload.get("alt_text", {})
+        except (json.JSONDecodeError, OSError):
+            st.session_state["last_alt_text"] = {}
     if ljm_png.exists():
         results["ljm_png"] = ljm_png
     if mlo_png.exists():
@@ -323,6 +330,7 @@ def main() -> None:
     if current_file_id != st.session_state["last_uploaded_file_id"]:
         st.session_state["last_results"] = None
         st.session_state["last_message"] = ""
+        st.session_state["last_alt_text"] = {}
         st.session_state["last_uploaded_file_id"] = current_file_id
 
     col1, col2 = st.columns([1, 1])
@@ -375,6 +383,8 @@ def main() -> None:
                 mime="application/pdf",
             )
 
+        alt_text = st.session_state.get("last_alt_text") or {}
+
         if "mlo_png" in results:
             st.download_button(
                 "Download MLO PNG",
@@ -382,6 +392,9 @@ def main() -> None:
                 file_name=f"{base_name}_mlos.png",
                 mime="image/png",
             )
+            if alt_text.get("mlo"):
+                st.caption("Suggested alt text (paste into Blackboard when embedding this image):")
+                st.code(alt_text["mlo"], language=None)
 
         if "ljm_png" in results:
             st.download_button(
@@ -390,6 +403,9 @@ def main() -> None:
                 file_name=f"{base_name}.png",
                 mime="image/png",
             )
+            if alt_text.get("ljm"):
+                st.caption("Suggested alt text (paste into Blackboard when embedding this image):")
+                st.code(alt_text["ljm"], language=None)
 
         if "review" in results:
             st.download_button(
