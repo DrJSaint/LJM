@@ -180,8 +180,12 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
 
     if completed.returncode != 0:
         stderr_lines = [line for line in completed.stderr.strip().splitlines() if line]
-        reason = stderr_lines[-1] if stderr_lines else f"exit code {completed.returncode}"
-        raise RuntimeError(f"Pipeline failed: {reason}")
+        reason = stderr_lines[-1] if stderr_lines else ""
+        if reason.startswith("[FAIL] "):
+            reason = reason[len("[FAIL] "):]
+        if not reason:
+            reason = f"Something went wrong while generating (exit code {completed.returncode}). Please try again."
+        raise RuntimeError(reason)
 
     base_name = input_path.stem
     results: dict[str, Path] = {}

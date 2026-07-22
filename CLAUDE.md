@@ -101,8 +101,11 @@ In `app.py`:
   - Reset workspace button
 - Pipeline failures (subprocess non-zero exit, e.g. the Easter-year hard error below) now
   surface the actual last stderr line via `st.error(...)` instead of a bare exit code — see
-  `run_pipeline()`. The full stdout/stderr is still captured into `last_message` but that
-  expander stays hidden per the list above.
+  `run_pipeline()`. A leading `"[FAIL] "` tag (from the extractor's own `fail()` helper, see
+  section 8) is stripped before display so the app doesn't show a doubled-up
+  "Pipeline failed: [FAIL] ..." message — just the clean sentence itself. The full
+  stdout/stderr is still captured into `last_message` but that expander stays hidden per the
+  list above.
 
 ### 6) Term dates and Easter break (added 2026-07-22 follow-up)
 `extract_student_journey_map_v2.py` no longer computes week dates as pure sequential
@@ -174,6 +177,33 @@ happens in this codebase. Two real gaps, both fixed in `app.py`:
   changes) and a standalone script confirming the stale-dir sweep only removes genuinely old
   dirs and that the sanitized join can no longer escape the intended folder.
 
+### 8) Friendly extraction error messages (2026-07-22, user feedback on raw error text)
+User uploaded a `.docx` with no table (just the word "Hello") and got the readable-but-techy
+`Pipeline failed: ValueError: Could not find week table`; uploaded a genuinely empty/invalid
+`.docx` and got a much more confusing `Pipeline failed: zipfile.BadZipFile: File is not a zip
+file`. Investigated both in `extract_student_journey_map_v2.py`:
+- **The `BadZipFile` one was a real bug, not just bad wording.** `python-docx`'s
+  `PhysPkgReader.__new__` only runs its own safe "is this actually a zip" check
+  (`zipfile.is_zipfile()`) when given a plain `str` path — passed a `pathlib.Path` instead,
+  it skips that check and opens the file as a raw `ZipFile`, letting an unwrapped
+  `zipfile.BadZipFile` escape instead of python-docx's own `PackageNotFoundError`.
+  `extract_weeks()` was calling `Document(docx_path)` with a `Path` object. Fixed by calling
+  `Document(str(docx_path))` instead — now any invalid/corrupt/empty file consistently raises
+  `PackageNotFoundError`, a single exception type to handle instead of two.
+- `main()` now wraps the risky calls (date parsing, `extract_weeks()`, `compute_week_dates()`)
+  in `try`/`except`, catching `PackageNotFoundError` and the "no week table" `ValueError`
+  specifically and calling a new `fail(message)` helper — prints `[FAIL] {message}` to
+  **stderr** (matters: `app.py` only inspects `completed.stderr`, not stdout) and exits 1,
+  with no Python traceback or exception-class name in the message. The pre-existing
+  Easter-year-missing `ValueError` (section 6) already had a good human message, so it's
+  routed through the same `fail()` path for consistent formatting rather than reworded.
+  Unrecognized exceptions still propagate as a full traceback — only these specific,
+  known/expected cases get the friendly one-liner treatment.
+- Verified end-to-end through the running app for all three cases (no table, corrupt file,
+  0-byte file) plus a regression check that the happy path and the Easter hard error still
+  work — see the `run_pipeline()` note in "Streamlit app" above for the matching app.py-side
+  cleanup (stripping the leading `[FAIL]` tag so the app doesn't show it doubled).
+
 ## Important PDF Logic
 In `app.py`:
 - Combined PDF is assembled from generated PNGs (`build_multipage_pdf`)
@@ -221,6 +251,15 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-07-22 follow-up 6)
+- User reported two confusing error messages from bad test uploads (no table; empty/corrupt
+  file) and asked for friendlier wording. Found the corrupt-file case was an actual bug (see
+  "Friendly extraction error messages" above) — python-docx skips its own file-type check
+  when passed a `Path` instead of `str`, letting a raw `zipfile.BadZipFile` leak through
+  instead of the library's own clearer exception. Fixed that plus added targeted
+  try/except handling in the extractor for the known cases, and cleaned up app.py so it
+  doesn't double the `[FAIL]` tag on display.
 
 ## Session Log (2026-07-22 follow-up 5)
 - User mentioned the app is now live and public on Streamlit Community Cloud, and shared a

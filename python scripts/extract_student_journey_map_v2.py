@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, csv, json, re
+import argparse, csv, json, re, sys
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 
 DEFAULT_WEEK_1_MONDAY='2026-09-21'
 EXPECTED_WEEKS=12
@@ -218,7 +219,10 @@ def extract_module_learning_outcomes(doc)->List[MLOExtract]:
     return outcomes
 
 def extract_weeks(docx_path:Path):
-    doc=Document(docx_path); module_title=extract_module_title(doc); table=find_week_table(doc)
+    # python-docx only runs its own "is this actually a docx" check when given a str path —
+    # passed a Path object, it skips straight to opening it as a zip and lets a raw, unhelpful
+    # zipfile.BadZipFile escape instead of the library's own PackageNotFoundError.
+    doc=Document(str(docx_path)); module_title=extract_module_title(doc); table=find_week_table(doc)
     if table is None: raise ValueError('Could not find week table')
     idx=header_index_map(table); weeks=[]
     for row in table.rows[1:]:
@@ -257,11 +261,36 @@ def validate_mlos(mlos:List[MLOExtract]):
 
 def status(issues): return 'APPROVED' if not issues else 'NEEDS REVIEW'
 
+def fail(message:str)->None:
+    print(f'[FAIL] {message}', file=sys.stderr)
+    sys.exit(1)
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--review', required=True); ap.add_argument('--json', required=True); ap.add_argument('--week1', default=DEFAULT_WEEK_1_MONDAY); ap.add_argument('--expected-weeks', type=int, default=EXPECTED_WEEKS); ap.add_argument('--easter-config', default=str(DEFAULT_EASTER_CONFIG))
-    a=ap.parse_args(); week1=datetime.strptime(a.week1,'%Y-%m-%d').date(); module,weeks,mlos=extract_weeks(Path(a.input)); issues=validate_weeks(weeks,a.expected_weeks)+validate_mlos(mlos)
+    a=ap.parse_args()
+    input_path=Path(a.input)
+
+    try:
+        week1=datetime.strptime(a.week1,'%Y-%m-%d').date()
+    except ValueError:
+        fail(f'Term start date "{a.week1}" is not valid — expected format YYYY-MM-DD.')
+
+    try:
+        module,weeks,mlos=extract_weeks(input_path)
+    except PackageNotFoundError:
+        fail(f'"{input_path.name}" doesn\'t look like a valid Word (.docx) file. Please check the file and try again.')
+    except ValueError as exc:
+        if 'week table' in str(exc).lower():
+            fail(f'Could not find a weekly plan table in "{input_path.name}". Make sure the document has a table with Week, Title & Topics, and Assessments columns.')
+        else:
+            fail(str(exc))
+
+    issues=validate_weeks(weeks,a.expected_weeks)+validate_mlos(mlos)
     easter_dates=load_easter_sundays(Path(a.easter_config))
-    final_weeks,break_window=compute_week_dates(weeks, week1, easter_dates)
+    try:
+        final_weeks,break_window=compute_week_dates(weeks, week1, easter_dates)
+    except ValueError as exc:
+        fail(str(exc))
     easter_break_payload={'start':break_window[0].isoformat(),'end':break_window[1].isoformat()} if break_window else None
     payload={'module_title':module,'week_1_monday':week1.isoformat(),'expected_weeks':a.expected_weeks,'weeks_found':len(weeks),'mlos_found':len(mlos),'extraction_status':status(issues),'issues':issues,'weeks':final_weeks,'easter_break':easter_break_payload,'mlos':[asdict(m) for m in mlos]}
     Path(a.json).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
