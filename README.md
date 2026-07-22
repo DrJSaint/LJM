@@ -7,6 +7,7 @@ Generate a student-facing learner journey map from a Word `.docx` file.
 - `input/`: source Word documents
 - `output/`: generated review text, JSON, PNG, and optional PDF
 - `python scripts/`: extraction, rendering, and pipeline scripts
+- `config/`: Easter Sunday lookup table used for automatic term-break insertion (see below)
 
 ## Requirements
 
@@ -121,6 +122,23 @@ Change the Week 1 Monday date:
 py ".\python scripts\make_student_journey_map.py" --week1 2026-09-21
 ```
 
+## Term Dates and the Easter Break
+
+`--week1` and `--expected-weeks` define the term as a plain sequence of Monday–Friday
+teaching weeks. If that date range overlaps Easter (22 Mar–25 Apr in the relevant year),
+a 2-week Easter break is inserted automatically — the Mon–Fri weeks immediately either
+side of Easter weekend — and every week after it shifts forward by 14 days. Teaching week
+numbering is untouched; the break renders as one extra timeline node with a bunny icon.
+
+Easter Sunday dates are looked up from `config/easter_sunday_dates_2027_2036.csv`. If a
+term's date range reaches a year that's missing from that file, extraction fails with a
+clear error rather than silently skipping the break — add the missing year's Easter Sunday
+date to the CSV to resolve it. The lookup file location can be overridden:
+
+```powershell
+py ".\python scripts\extract_student_journey_map_v2.py" --input ".\input\your_file.docx" --review ".\output\review.txt" --json ".\output\data.json" --easter-config ".\config\easter_sunday_dates_2027_2036.csv"
+```
+
 ## Direct Scripts
 
 Extract review text and JSON only:
@@ -149,7 +167,9 @@ Run the web demo locally:
 streamlit run .\app.py
 ```
 
-The demo uploads a Word document, runs the existing pipeline, and always generates all assets together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. Downloads are offered individually in that order, plus a "Download all as ZIP" button. It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
+The demo uploads a Word document, runs the existing pipeline, and always generates all assets together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. Downloads are offered individually in that order, plus a "Download all as ZIP" button. Uploading a different file (or removing the current one) clears any previous run's download buttons.
+
+The sidebar has two sections: **Term Start Picker** (the Week 1 Monday date and a strict 10/12/Custom teaching-week-count control — see "Term Dates and the Easter Break" above) and **LJM height options** (the layout-mode radio). It is intended as a lightweight demo build; if the content is sensitive, use a private deployment instead of a public Streamlit Cloud app.
 
 ## Git Notes
 
