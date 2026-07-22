@@ -306,7 +306,7 @@ def main() -> None:
             index=["flex-height", "standard", "fit-fixed"].index(st.session_state["layout_mode"]),
             format_func=lambda value: {"flex-height": "Flexi-height", "standard": "Fixed", "fit-fixed": "Fixed + fit"}[value],
         )
-        st.caption("PDF, PNGs, and the review text are all generated together.")
+        # st.caption("PDF, PNGs, and the review text are all generated together.")
 
         if False:
             with st.expander("Advanced MLO controls", expanded=False):
