@@ -260,6 +260,145 @@ def render_event_cell(row: dict) -> str:
     """
 
 
+def render_schedule_rows(rows: list[dict]) -> str:
+    rows_html = ""
+    for row in rows:
+        row_class = f"schedule-row row-{row.get('kind', 'event')}"
+        if row.get("kind") == "parallel_workshops":
+            tracks = row.get("tracks", [])
+
+            def room_sort_key(track: dict) -> tuple[int, str]:
+                room = str(track.get("room", "")).strip()
+                for token in room.split():
+                    if len(token) == 1 and token.isalpha():
+                        return (0, token.upper())
+                return (1, room.upper())
+
+            tracks_sorted = sorted(tracks, key=room_sort_key)
+            total_rows = max(1, len(tracks_sorted)) + 1
+
+            rows_html += f"""
+            <tr class="{row_class} row-workshops-header">
+              <th scope="row" class="time-col" rowspan="{total_rows}">{e(row.get('time', ''))}</th>
+              <td class="event-col">{render_event_cell(row)}</td>
+              <td class="location-col workshop-location-hint"></td>
+            </tr>
+            """
+
+            for track in tracks_sorted:
+                talks = track.get("talks", [])
+                presenter = ""
+                if talks:
+                    presenter = str(talks[0].get("presenter", "")).strip()
+                title_html = f"<div class=\"talk-title\">{e(track.get('title', 'Workshop'))}</div>"
+                presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+
+                rows_html += f"""
+                <tr class="{row_class} row-workshop-item">
+                  <td class="event-col">
+                    {title_html}
+                    {presenter_html}
+                  </td>
+                  <td class="location-col">{e(track.get('room', ''))}</td>
+                </tr>
+                """
+
+        elif row.get("kind") == "parallel_sessions":
+            rows_html += f"""
+            <tr class="{row_class}">
+              <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
+              <td class="event-col event-col-wide" colspan="2">{render_event_cell(row)}</td>
+            </tr>
+            """
+        else:
+            rows_html += f"""
+            <tr class="{row_class}">
+              <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
+              <td class="event-col">{render_event_cell(row)}</td>
+              <td class="location-col">{e(row.get('location', ''))}</td>
+            </tr>
+            """
+
+    return rows_html
+
+
+def row_layout_weight(row: dict) -> int:
+    kind = str(row.get("kind", "event"))
+    if kind == "parallel_sessions":
+        return 5
+    if kind == "plenary":
+        return 3
+    if kind == "parallel_workshops":
+        return 3
+    return 1
+
+
+def split_rows_two_sides(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    if len(rows) <= 1:
+        return rows, []
+
+    weights = [row_layout_weight(row) for row in rows]
+    total = sum(weights)
+    running = 0
+    split_idx = max(1, len(rows) // 2)
+
+    for idx, weight in enumerate(weights, start=1):
+        running += weight
+        if running >= total / 2:
+            split_idx = idx
+            break
+
+    min_side_rows = 3
+    split_idx = max(min_side_rows, split_idx)
+    split_idx = min(len(rows) - min_side_rows, split_idx)
+    split_idx = max(1, min(len(rows) - 1, split_idx))
+    return rows[:split_idx], rows[split_idx:]
+
+
+def split_rows_balanced(rows: list[dict], parts: int) -> list[list[dict]]:
+    if parts <= 1:
+        return [rows]
+    if not rows:
+        return [[] for _ in range(parts)]
+
+    weights = [row_layout_weight(row) for row in rows]
+    total = sum(weights)
+    target = max(1, total / parts)
+
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    running = 0
+
+    for idx, row in enumerate(rows):
+        remaining_rows = len(rows) - idx
+        remaining_groups = parts - len(groups)
+
+        if (
+            current
+            and remaining_groups > 1
+            and running >= target
+            and remaining_rows >= remaining_groups
+        ):
+            groups.append(current)
+            current = []
+            running = 0
+
+        current.append(row)
+        running += row_layout_weight(row)
+
+    if current:
+        groups.append(current)
+
+    while len(groups) < parts:
+        groups.append([])
+
+    while len(groups) > parts:
+        groups[-2].extend(groups[-1])
+        groups.pop()
+
+    return groups
+
+
 def card_weight(card: dict) -> int:
     text_blob = " ".join(card.get("lines", []))
     return max(1, 1 + len(text_blob) // 120)
@@ -374,14 +513,14 @@ def split_balanced(cards: list[dict], parts: int) -> list[list[dict]]:
         running += card_weight(card)
 
     if current:
-        groups.append(current)
+      groups.append(current)
 
     while len(groups) < parts:
-        groups.append([])
+      groups.append([])
 
     while len(groups) > parts:
-        groups[-2].extend(groups[-1])
-        groups.pop()
+      groups[-2].extend(groups[-1])
+      groups.pop()
 
     return groups
 
@@ -472,7 +611,11 @@ def base_css() -> str:
       --row-presentations: var(--lilac);
     }}
 
-    * {{ box-sizing: border-box; }}
+    * {{
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }}
     body {{
       margin: 0;
       color: var(--dark);
@@ -550,63 +693,7 @@ def base_css() -> str:
 
 def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     rows = build_onepager_rows(programme)
-    rows_html = ""
-    for row in rows:
-        row_class = f"schedule-row row-{row.get('kind', 'event')}"
-        if row.get("kind") == "parallel_workshops":
-            tracks = row.get("tracks", [])
-
-            def room_sort_key(track: dict) -> tuple[int, str]:
-                room = str(track.get("room", "")).strip()
-                for token in room.split():
-                    if len(token) == 1 and token.isalpha():
-                        return (0, token.upper())
-                return (1, room.upper())
-
-            tracks_sorted = sorted(tracks, key=room_sort_key)
-            total_rows = max(1, len(tracks_sorted)) + 1
-
-            rows_html += f"""
-            <tr class="{row_class} row-workshops-header">
-              <th scope="row" class="time-col" rowspan="{total_rows}">{e(row.get('time', ''))}</th>
-              <td class="event-col">{render_event_cell(row)}</td>
-              <td class="location-col workshop-location-hint"></td>
-            </tr>
-            """
-
-            for track in tracks_sorted:
-                talks = track.get("talks", [])
-                presenter = ""
-                if talks:
-                    presenter = str(talks[0].get("presenter", "")).strip()
-                title_html = f"<div class=\"talk-title\">{e(track.get('title', 'Workshop'))}</div>"
-                presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
-
-                rows_html += f"""
-                <tr class="{row_class} row-workshop-item">
-                  <td class="event-col">
-                    {title_html}
-                    {presenter_html}
-                  </td>
-                  <td class="location-col">{e(track.get('room', ''))}</td>
-                </tr>
-                """
-
-        elif row.get("kind") == "parallel_sessions":
-            rows_html += f"""
-            <tr class="{row_class}">
-              <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
-              <td class="event-col event-col-wide" colspan="2">{render_event_cell(row)}</td>
-            </tr>
-            """
-        else:
-            rows_html += f"""
-            <tr class="{row_class}">
-              <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
-              <td class="event-col">{render_event_cell(row)}</td>
-              <td class="location-col">{e(row.get('location', ''))}</td>
-            </tr>
-            """
+    rows_html = render_schedule_rows(rows)
 
     source_name = Path(parsed.get("source_file", "")).name or "LTRS2026 schedule.xlsx"
 
@@ -694,8 +781,371 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .col-time {{ width: 5.2em; }}
   .col-location {{ width: 7.6em; }}
-  .schedule-table thead.sr-only th {{
+  .schedule-table thead th {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--cream);
+    background: #216d5c;
+  }}
+  .time-col {{
+    background: #216d5c;
+    color: var(--cream);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.05;
+    padding: 4px 5px;
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    text-align: left;
+    vertical-align: top;
+  }}
+  .event-col {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 3px 6px;
+    vertical-align: top;
+    background: var(--cream);
+  }}
+  .location-col {{
+    width: 18%;
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 4px 5px;
+    vertical-align: top;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--cream);
+  }}
+  .event-shell h3 {{
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 1.05;
+    margin: 0;
+  }}
+  .detail-lines {{
+    margin: 2px 0 0;
+    font-size: 11px;
+  }}
+  .detail-line {{ margin: 1px 0; }}
+  .event-note {{
+    margin: 2px 0 0;
+    font-size: 11px;
+    font-style: italic;
+  }}
+  .chair-note {{
+    display: block;
+    margin-left: -6px;
+    margin-right: -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    padding-bottom: 2px;
+    margin-bottom: 2px;
+  }}
+  .track-grid {{
+    margin-top: 3px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 3px;
+  }}
+  .row-workshops-header .event-col {{
+    padding-bottom: 4px;
+  }}
+  .workshop-location-hint {{
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11px;
+  }}
+  .row-workshop-item .event-col {{
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }}
+  .row-workshop-item .talk-presenter {{
+    margin-top: 2px;
+  }}
+  .row-workshop-item .talk-title {{
+    margin-top: 0;
+  }}
+  .track-card {{
+    border: 1px solid rgba(23, 31, 32, 0.22);
+    background: #f8f5ec;
+    padding: 5px 6px;
+  }}
+  .row-parallel_sessions .track-card,
+  .row-parallel_workshops .track-card {{
+    background: #d8cbf1;
+  }}
+  .track-card h4 {{
+    font-size: 13px;
+    line-height: 1.08;
+    margin: 0;
+  }}
+  .track-room {{
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+  }}
+  .track-chair {{
+    display: block;
+    margin-left: -6px;
+    margin-right: -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 11px;
+    font-style: italic;
+    margin-top: 3px;
+    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    padding-bottom: 3px;
+    margin-bottom: 3px;
+  }}
+  .talk-list {{
+    margin: 4px 0 0;
     padding: 0;
+    list-style: none;
+  }}
+  .talk-list li {{
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dotted rgba(23, 31, 32, 0.45);
+  }}
+  .talk-list li:first-child {{
+    border-top: 0;
+    margin-top: 0;
+    padding-top: 0;
+  }}
+  .talk-presenter {{
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.25;
+  }}
+  .talk-title {{
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
+  }}
+  .plenary-list .talk-title {{
+    font-size: 11px;
+  }}
+  /* Row type color mapping */
+  .row-event .event-col,
+  .row-event .location-col,
+  .row-keynote .event-col,
+  .row-keynote .location-col {{
+    background: var(--row-event);
+  }}
+  .row-break .event-col,
+  .row-break .location-col {{
+    background: var(--row-break);
+  }}
+  .row-plenary .event-col,
+  .row-plenary .location-col {{
+    background: var(--row-plenary);
+  }}
+  .row-parallel_workshops .event-col,
+  .row-parallel_workshops .location-col {{
+    background: var(--row-workshop);
+  }}
+  .row-parallel_sessions .event-col,
+  .row-parallel_sessions .location-col {{
+    background: var(--row-presentations);
+  }}
+  .footer-line {{
+    margin-top: 8px;
+    text-align: center;
+    font-family: "Magnole", Georgia, serif;
+    color: var(--green);
+    font-size: 24px;
+    line-height: 1.0;
+  }}
+  .footer-sub {{
+    text-align: center;
+    margin-top: 1px;
+    font-size: 13px;
+    color: var(--dark);
+  }}
+  @media screen and (max-width: 900px) {{
+    .single-page {{ width: auto; min-height: auto; padding: 10px; }}
+    .schedule-header h1 {{ font-size: 36px; }}
+    .schedule-table,
+    .schedule-table thead,
+    .schedule-table tbody,
+    .schedule-table tr,
+    .schedule-table th,
+    .schedule-table td {{
+      display: block;
+      width: 100%;
+    }}
+    .schedule-table thead {{
+      display: none;
+    }}
+    .time-col,
+    .event-col,
+    .location-col {{
+      border-width: 1px;
+    }}
+    .time-col {{ border-bottom: 0; }}
+    .event-col {{ border-top: 0; border-bottom: 0; }}
+    .location-col {{ border-top: 0; text-align: left; }}
+  }}
+  @media print {{
+    body {{ background: #fff; }}
+    .single-page {{ margin: 0; padding: 0; }}
+  }}
+  </style>
+</head>
+<body>
+  <main class="single-page">
+    <header class="schedule-header" role="banner">
+      <div class="schedule-header-top">
+        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <h1>LTRS 2026</h1>
+      </div>
+      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
+      <p class="source-line">September 10th, 2026</p>
+    </header>
+
+    <table class="schedule-table" aria-describedby="schedule-caption">
+      <caption id="schedule-caption" class="sr-only">LTRS 2026 conference schedule with columns for time, event details, and location.</caption>
+      <colgroup>
+        <col class="col-time">
+        <col class="col-event">
+        <col class="col-location">
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          <th scope="col">Event</th>
+          <th scope="col">Location</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>
+
+    <div class="footer-line">Cultivating Possibility</div>
+    <div class="footer-sub">Regent's University London</div>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
+    rows = build_onepager_rows(programme)
+    front_rows, back_rows = split_rows_two_sides(rows)
+    front_rows_html = render_schedule_rows(front_rows)
+    back_rows_html = render_schedule_rows(back_rows)
+
+    return f"""<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LTRS 2026 Schedule - A4 Two Side</title>
+  <style>
+{base_css()}
+  @page {{ size: A4 portrait; margin: 8mm; }}
+  .a4-page {{
+    width: 210mm;
+    min-height: 297mm;
+    padding: 8mm;
+    margin: 0 auto;
+    page-break-after: always;
+    background: var(--cream);
+  }}
+  .a4-page:last-child {{ page-break-after: auto; }}
+  .schedule-header {{
+    background: var(--green);
+    color: var(--cream);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    text-align: center;
+  }}
+  .schedule-header-top {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 6px;
+  }}
+  .schedule-header-logo {{
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
+    object-fit: contain;
+    display: block;
+  }}
+  .schedule-header h1 {{
+    font-size: 48px;
+    color: var(--cream);
+    margin: 0;
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    line-height: 0.95;
+  }}
+  .schedule-header .subtitle-line {{
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.2;
+  }}
+  .schedule-header .subtitle-line.magnole {{
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }}
+  .source-line {{
+    font-size: 14px;
+    line-height: 1.2;
+    margin-top: 2px;
+  }}
+  .a4-page.continuation .schedule-header {{
+    padding: 6px 10px;
+  }}
+  .a4-page.continuation .schedule-header h1 {{
+    font-size: 36px;
+  }}
+  .a4-page.continuation .schedule-table thead {{
+    display: none;
+  }}
+  .schedule-table {{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    background: #fff;
+  }}
+  .col-time {{ width: 5.2em; }}
+  .col-location {{ width: 7.6em; }}
+  .schedule-table thead th {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--cream);
+    background: #216d5c;
+  }}
+  .sr-only {{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
     border: 0;
   }}
   .time-col {{
@@ -759,7 +1209,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     gap: 3px;
   }}
   .row-workshops-header .event-col {{
-    padding-bottom: 1px;
+    padding-bottom: 4px;
   }}
   .workshop-location-hint {{
     text-transform: uppercase;
@@ -767,11 +1217,11 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     font-size: 11px;
   }}
   .row-workshop-item .event-col {{
-    padding-top: 2px;
-    padding-bottom: 2px;
+    padding-top: 5px;
+    padding-bottom: 5px;
   }}
   .row-workshop-item .talk-presenter {{
-    margin-top: 1px;
+    margin-top: 2px;
   }}
   .row-workshop-item .talk-title {{
     margin-top: 0;
@@ -779,7 +1229,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .track-card {{
     border: 1px solid rgba(23, 31, 32, 0.22);
     background: #f8f5ec;
-    padding: 2px 4px;
+    padding: 5px 6px;
   }}
   .row-parallel_sessions .track-card,
   .row-parallel_workshops .track-card {{
@@ -793,29 +1243,29 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .track-room {{
     font-size: 12px;
     font-weight: 700;
-    margin-top: 1px;
+    margin-top: 2px;
   }}
   .track-chair {{
     display: block;
-    margin-left: -4px;
-    margin-right: -4px;
-    padding-left: 4px;
-    padding-right: 4px;
+    margin-left: -6px;
+    margin-right: -6px;
+    padding-left: 6px;
+    padding-right: 6px;
     font-size: 11px;
     font-style: italic;
-    margin-top: 1px;
+    margin-top: 3px;
     border-bottom: 1px solid rgba(23, 31, 32, 0.52);
-    padding-bottom: 2px;
-    margin-bottom: 2px;
+    padding-bottom: 3px;
+    margin-bottom: 3px;
   }}
   .talk-list {{
-    margin: 2px 0 0;
+    margin: 4px 0 0;
     padding: 0;
     list-style: none;
   }}
   .talk-list li {{
-    margin-top: 2px;
-    padding-top: 2px;
+    margin-top: 4px;
+    padding-top: 4px;
     border-top: 1px dotted rgba(23, 31, 32, 0.45);
   }}
   .talk-list li:first-child {{
@@ -826,17 +1276,16 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .talk-presenter {{
     font-size: 11px;
     font-weight: 400;
-    line-height: 1.1;
+    line-height: 1.25;
   }}
   .talk-title {{
     font-size: 11px;
     font-weight: 700;
-    line-height: 1.12;
+    line-height: 1.25;
   }}
   .plenary-list .talk-title {{
     font-size: 11px;
   }}
-  /* Row type color mapping */
   .row-event .event-col,
   .row-event .location-col,
   .row-keynote .event-col,
@@ -859,52 +1308,51 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .row-parallel_sessions .location-col {{
     background: var(--row-presentations);
   }}
-  .footer-line {{
-    margin-top: 8px;
-    text-align: center;
-    font-family: "Magnole", Georgia, serif;
-    color: var(--green);
-    font-size: 24px;
-    line-height: 1.0;
-  }}
-  .footer-sub {{
-    text-align: center;
-    margin-top: 1px;
-    font-size: 13px;
-    color: var(--dark);
-  }}
-  @media (max-width: 900px) {{
-    .single-page {{ width: auto; min-height: auto; padding: 10px; }}
-    .schedule-header h1 {{ font-size: 36px; }}
-    .schedule-table,
-    .schedule-table thead,
-    .schedule-table tbody,
-    .schedule-table tr,
-    .schedule-table th,
-    .schedule-table td {{
-      display: block;
-      width: 100%;
-    }}
-    .schedule-table thead {{
-      display: none;
-    }}
-    .time-col,
-    .event-col,
-    .location-col {{
-      border-width: 1px;
-    }}
-    .time-col {{ border-bottom: 0; }}
-    .event-col {{ border-top: 0; border-bottom: 0; }}
-    .location-col {{ border-top: 0; text-align: left; }}
-  }}
   @media print {{
-    body {{ background: #fff; }}
-    .single-page {{ margin: 0; padding: 0; }}
+    .schedule-header {{
+      background: var(--green) !important;
+      color: var(--cream) !important;
+    }}
+    .schedule-header h1,
+    .schedule-header .subtitle-line,
+    .schedule-header .source-line {{
+      color: var(--cream) !important;
+    }}
+    .time-col {{
+      background: #216d5c !important;
+      color: var(--cream) !important;
+    }}
+    .row-event .event-col,
+    .row-event .location-col,
+    .row-keynote .event-col,
+    .row-keynote .location-col {{
+      background: var(--row-event) !important;
+    }}
+    .row-break .event-col,
+    .row-break .location-col {{
+      background: var(--row-break) !important;
+    }}
+    .row-plenary .event-col,
+    .row-plenary .location-col {{
+      background: var(--row-plenary) !important;
+    }}
+    .row-parallel_workshops .event-col,
+    .row-parallel_workshops .location-col {{
+      background: var(--row-workshop) !important;
+    }}
+    .row-parallel_sessions .event-col,
+    .row-parallel_sessions .location-col {{
+      background: var(--row-presentations) !important;
+    }}
+  }}
+  @media screen {{
+    body {{ background: #d9d9d9; padding: 10px; }}
+    .a4-page {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
   }}
   </style>
 </head>
 <body>
-  <main class="single-page">
+  <main class="a4-page">
     <header class="schedule-header" role="banner">
       <div class="schedule-header-top">
         <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
@@ -914,15 +1362,14 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
       <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
       <p class="source-line">September 10th, 2026</p>
     </header>
-
-    <table class="schedule-table" aria-describedby="schedule-caption">
-      <caption id="schedule-caption" class="sr-only">LTRS 2026 conference schedule with columns for time, event details, and location.</caption>
+    <table class="schedule-table" aria-describedby="schedule-caption-front">
+      <caption id="schedule-caption-front" class="sr-only">LTRS 2026 conference schedule side 1 with columns for time, event details, and location.</caption>
       <colgroup>
         <col class="col-time">
         <col class="col-event">
         <col class="col-location">
       </colgroup>
-      <thead class="sr-only">
+      <thead>
         <tr>
           <th scope="col">Time</th>
           <th scope="col">Event</th>
@@ -930,98 +1377,110 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
         </tr>
       </thead>
       <tbody>
-        {rows_html}
+        {front_rows_html}
       </tbody>
     </table>
+  </main>
 
-    <div class="footer-line">Cultivating Possibility</div>
-    <div class="footer-sub">Regent's University London</div>
+  <main class="a4-page continuation">
+    <header class="schedule-header" role="banner">
+      <div class="schedule-header-top">
+        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <h1>LTRS 2026</h1>
+      </div>
+      <p class="subtitle-line">Programme Continued</p>
+      <p class="source-line">September 10th, 2026</p>
+    </header>
+    <table class="schedule-table" aria-describedby="schedule-caption-back">
+      <caption id="schedule-caption-back" class="sr-only">LTRS 2026 conference schedule side 2 with columns for time, event details, and location.</caption>
+      <colgroup>
+        <col class="col-time">
+        <col class="col-event">
+        <col class="col-location">
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          <th scope="col">Event</th>
+          <th scope="col">Location</th>
+        </tr>
+      </thead>
+      <tbody>
+        {back_rows_html}
+      </tbody>
+    </table>
   </main>
 </body>
 </html>
 """
 
 
-def render_two_side_a4_html(cards: list[dict]) -> str:
-    pages = split_balanced(cards, 2)
-
-    page_html = []
-    for idx, page_cards in enumerate(pages, start=1):
-        cards_html = "\n".join(render_card(card) for card in page_cards)
-        page_html.append(
-            f"""
-    <section class="a4-page">
-      <div class="panel-label">A4 Side {idx}</div>
-      <div class="cards">{cards_html}</div>
-    </section>
-    """
-        )
-
-    return f"""<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LTRS 2026 Schedule - A4 Two Side</title>
-  <style>
-{base_css()}
-  @page {{ size: A4 portrait; margin: 10mm; }}
-  h1 {{ font-size: 54px; }}
-  .a4-page {{
-    width: 190mm;
-    min-height: 277mm;
-    padding: 10mm;
-    margin: 0 auto;
-    page-break-after: always;
-    background: var(--cream);
-  }}
-  .a4-page:last-child {{ page-break-after: auto; }}
-  .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-  @media screen {{
-    body {{ background: #d9d9d9; padding: 10px; }}
-    .a4-page {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
-  }}
-  </style>
-</head>
-<body>
-  <header class="a4-page">
-    <div class="title-block">
-      <div class="eyebrow">Learning, Teaching, Research and Scholarship Conference</div>
-      <h1>LTRS 2026</h1>
-      <p class="subtitle">Print layout: 2 A4 sides</p>
-    </div>
-    <p style="font-size:13px; margin-bottom:10px;">Use double-sided printing (flip on long edge).</p>
-    <div class="cards"></div>
-  </header>
-  {''.join(page_html)}
-</body>
-</html>
-"""
-
-
 def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[dict]) -> str:
-    deck = [cover_card(parsed, programme, cards)] + cards
-    panels = split_balanced(deck, 4)
+    _ = cards  # Kept for function signature compatibility.
+    rows = build_onepager_rows(programme)
+    quarters = split_rows_balanced(rows, 4)
 
-    # Imposition for folded A4 booklet:
-    # Outer sheet: left=back panel (4), right=front panel (1)
-    # Inner sheet: left=inside-left panel (2), right=inside-right panel (3)
-    front = panels[0]
-    inside_left = panels[1]
-    inside_right = panels[2]
-    back = panels[3]
+    # Imposition order for folding:
+    # Sheet 1 (outer): Q4 on left, Q1 on right
+    # Sheet 2 (inner): Q2 on left, Q3 on right
+    q1, q2, q3, q4 = quarters
 
-    def panel_html(label: str, panel_cards: list[dict]) -> str:
-        cards_html = "\n".join(render_card(card) for card in panel_cards)
+    def panel_html(rows_for_panel: list[dict], panel_title: str, show_primary_header: bool = False) -> str:
+        thead_html = """
+          <thead>
+            <tr>
+              <th scope=\"col\">Time</th>
+              <th scope=\"col\">Event</th>
+              <th scope=\"col\">Location</th>
+            </tr>
+          </thead>
+        """ if show_primary_header else ""
+
+        header_block = ""
+        if show_primary_header:
+            header_block = """
+          <header class=\"schedule-header\" role=\"banner\">
+            <div class=\"schedule-header-top\">
+              <img class=\"schedule-header-logo\" src=\"../assets/r_logo.png\" alt=\"Regent's University London logo\">
+              <h1>LTRS 2026</h1>
+            </div>
+            <p class=\"subtitle-line magnole\">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+            <p class=\"subtitle-line\">Learning, Teaching, Research and Scholarship Conference</p>
+            <p class=\"source-line\">September 10th, 2026</p>
+          </header>
+            """
+        else:
+            header_block = f"""
+          <header class=\"panel-header\">
+            <h2>{e(panel_title)}</h2>
+          </header>
+            """
+
         return f"""
-        <section class="panel">
-          <div class="panel-label">{e(label)}</div>
-          <div class="cards">{cards_html}</div>
+        <section class=\"panel\">
+          {header_block}
+          <table class=\"schedule-table\" aria-label=\"{e(panel_title)}\">
+            <colgroup>
+              <col class=\"col-time\">
+              <col class=\"col-event\">
+              <col class=\"col-location\">
+            </colgroup>
+            {thead_html}
+            <tbody>
+              {render_schedule_rows(rows_for_panel)}
+            </tbody>
+          </table>
         </section>
         """
 
-    outer = panel_html("Back (Panel 4)", back) + panel_html("Front (Panel 1)", front)
-    inner = panel_html("Inside Left (Panel 2)", inside_left) + panel_html("Inside Right (Panel 3)", inside_right)
+    outer_sheet = (
+        panel_html(q4, "Programme - Quarter 4")
+        + panel_html(q1, "Programme - Quarter 1", show_primary_header=True)
+    )
+    inner_sheet = (
+        panel_html(q2, "Programme - Quarter 2")
+        + panel_html(q3, "Programme - Quarter 3")
+    )
 
     return f"""<!doctype html>
 <html lang="en-GB">
@@ -1032,7 +1491,6 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
   <style>
 {base_css()}
   @page {{ size: A4 landscape; margin: 8mm; }}
-  h1 {{ font-size: 54px; }}
   .sheet {{
     width: 281mm;
     min-height: 194mm;
@@ -1048,50 +1506,204 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
   .panel {{
     border: 1px dashed rgba(23, 31, 32, 0.25);
     border-radius: 10px;
-    padding: 6mm;
+    padding: 4mm;
     overflow: hidden;
+    background: #fff;
   }}
-  .cards {{
-    grid-template-columns: 1fr;
-    gap: 7px;
+  .schedule-header {{
+    background: var(--green);
+    color: var(--cream);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    text-align: center;
   }}
-  .card h3 {{ font-size: 14px; }}
-  .card-subtitle {{ font-size: 12px; }}
-  .card ul {{ font-size: 12px; }}
-  .instructions {{
-    width: 281mm;
-    margin: 0 auto;
-    padding: 8mm;
-    page-break-after: always;
+  .schedule-header-top {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 4px;
+  }}
+  .schedule-header-logo {{
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    display: block;
+  }}
+  .schedule-header h1 {{
+    font-size: 30px;
+    color: var(--cream);
+    margin: 0;
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    line-height: 0.95;
+  }}
+  .schedule-header .subtitle-line {{
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.15;
+  }}
+  .schedule-header .subtitle-line.magnole {{
+    font-family: "Magnole", Georgia, serif;
+    font-size: 14px;
+  }}
+  .schedule-header .source-line {{
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 1.1;
+  }}
+  .panel-header {{
+    border-bottom: 1px solid rgba(23, 31, 32, 0.28);
+    margin-bottom: 4px;
+    padding-bottom: 2px;
+  }}
+  .panel-header h2 {{
+    margin: 0;
+    font-size: 14px;
+    font-family: "Magnole", Georgia, serif;
+    color: var(--green);
+    font-weight: 400;
+  }}
+  .schedule-table {{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    background: #fff;
+  }}
+  .col-time {{ width: 4.7em; }}
+  .col-location {{ width: 6.4em; }}
+  .schedule-table thead th {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 3px 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--cream);
+    background: #216d5c;
+  }}
+  .time-col {{
+    background: #216d5c;
+    color: var(--cream);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.05;
+    padding: 3px 4px;
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    text-align: left;
+    vertical-align: top;
+  }}
+  .event-col {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 2px 4px;
+    vertical-align: top;
     background: var(--cream);
+  }}
+  .location-col {{
+    border: 1px solid rgba(23, 31, 32, 0.42);
+    padding: 2px 4px;
+    vertical-align: top;
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    background: var(--cream);
+  }}
+  .event-shell h3 {{
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    font-size: 12px;
+    line-height: 1.04;
+    margin: 0;
+  }}
+  .detail-lines {{ margin: 1px 0 0; font-size: 8px; }}
+  .detail-line {{ margin: 0; }}
+  .event-note {{ margin: 1px 0 0; font-size: 8px; font-style: italic; }}
+  .chair-note {{
+    display: block;
+    margin-left: -4px;
+    margin-right: -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+    border-bottom: 1px solid rgba(23, 31, 32, 0.45);
+    padding-bottom: 1px;
+    margin-bottom: 1px;
+  }}
+  .track-grid {{ margin-top: 2px; display: grid; gap: 2px; grid-template-columns: 1fr; }}
+  .row-workshops-header .event-col {{ padding-bottom: 1px; }}
+  .workshop-location-hint {{ text-transform: uppercase; letter-spacing: 0.02em; font-size: 8px; }}
+  .row-workshop-item .event-col {{ padding-top: 1px; padding-bottom: 1px; }}
+  .track-card {{ border: 1px solid rgba(23, 31, 32, 0.2); background: #f8f5ec; padding: 1px 3px; }}
+  .row-parallel_sessions .track-card,
+  .row-parallel_workshops .track-card {{ background: #d8cbf1; }}
+  .track-card h4 {{ font-size: 9px; line-height: 1.05; margin: 0; }}
+  .track-room {{ font-size: 8px; font-weight: 700; margin-top: 1px; }}
+  .track-chair {{
+    display: block;
+    margin-left: -3px;
+    margin-right: -3px;
+    padding-left: 3px;
+    padding-right: 3px;
+    font-size: 8px;
+    font-style: italic;
+    margin-top: 1px;
+    border-bottom: 1px solid rgba(23, 31, 32, 0.45);
+    padding-bottom: 1px;
+    margin-bottom: 1px;
+  }}
+  .talk-list {{ margin: 1px 0 0; padding: 0; list-style: none; }}
+  .talk-list li {{ margin-top: 1px; padding-top: 1px; border-top: 1px dotted rgba(23, 31, 32, 0.35); }}
+  .talk-list li:first-child {{ border-top: 0; margin-top: 0; padding-top: 0; }}
+  .talk-presenter {{ font-size: 8px; font-weight: 400; line-height: 1.08; }}
+  .talk-title {{ font-size: 8px; font-weight: 700; line-height: 1.08; }}
+  .row-event .event-col,
+  .row-event .location-col,
+  .row-keynote .event-col,
+  .row-keynote .location-col {{ background: var(--row-event); }}
+  .row-break .event-col,
+  .row-break .location-col {{ background: var(--row-break); }}
+  .row-plenary .event-col,
+  .row-plenary .location-col {{ background: var(--row-plenary); }}
+  .row-parallel_workshops .event-col,
+  .row-parallel_workshops .location-col {{ background: var(--row-workshop); }}
+  .row-parallel_sessions .event-col,
+  .row-parallel_sessions .location-col {{ background: var(--row-presentations); }}
+  @media print {{
+    .schedule-header {{
+      background: var(--green) !important;
+      color: var(--cream) !important;
+    }}
+    .schedule-header h1,
+    .schedule-header .subtitle-line,
+    .schedule-header .source-line {{ color: var(--cream) !important; }}
+    .time-col {{ background: #216d5c !important; color: var(--cream) !important; }}
+    .row-event .event-col,
+    .row-event .location-col,
+    .row-keynote .event-col,
+    .row-keynote .location-col {{ background: var(--row-event) !important; }}
+    .row-break .event-col,
+    .row-break .location-col {{ background: var(--row-break) !important; }}
+    .row-plenary .event-col,
+    .row-plenary .location-col {{ background: var(--row-plenary) !important; }}
+    .row-parallel_workshops .event-col,
+    .row-parallel_workshops .location-col {{ background: var(--row-workshop) !important; }}
+    .row-parallel_sessions .event-col,
+    .row-parallel_sessions .location-col {{ background: var(--row-presentations) !important; }}
   }}
   @media screen {{
     body {{ background: #d9d9d9; padding: 10px; }}
-    .instructions, .sheet {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
+    .sheet {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
   }}
   </style>
 </head>
 <body>
-  <section class="instructions">
-    <header class="title-block">
-      <div class="eyebrow">Learning, Teaching, Research and Scholarship Conference</div>
-      <h1>LTRS 2026</h1>
-      <p class="subtitle">Print layout: 4 panels on folded A4</p>
-    </header>
-    <ol style="margin-top:0; padding-left:18px; font-size:13px;">
-      <li>Print double-sided on A4, landscape, flip on short edge.</li>
-      <li>First printed side is the outer sheet: back panel on the left, front panel on the right.</li>
-      <li>Second printed side is the inner sheet with panels 2 and 3.</li>
-      <li>Fold vertically down the middle.</li>
-    </ol>
-  </section>
-
   <section class="sheet">
-    {outer}
+    {outer_sheet}
   </section>
-
   <section class="sheet">
-    {inner}
+    {inner_sheet}
   </section>
 </body>
 </html>
@@ -1121,7 +1733,7 @@ def main() -> None:
     fold_html = output_dir / f"{args.base_name}_a4_fold_card.html"
 
     single_html.write_text(render_single_page_html(parsed, programme), encoding="utf-8")
-    two_side_html.write_text(render_two_side_a4_html(cards), encoding="utf-8")
+    two_side_html.write_text(render_two_side_a4_html(parsed, programme), encoding="utf-8")
     fold_html.write_text(render_fold_card_a4_html(parsed, programme, cards), encoding="utf-8")
 
     print(f"Wrote HTML: {single_html}")

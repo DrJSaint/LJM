@@ -1,6 +1,34 @@
 # Claude Handoff (LJM_Renderer)
 
 ## Project Purpose
+This repo has two parallel pipelines:
+
+### A) LJM / MLO pipeline
+Generates learner journey artifacts from a Word `.docx`:
+- LJM poster (PNG)
+- MLO card (PNG, transparent header band)
+- Combined PDF assembled from generated PNG pages in the Streamlit app
+
+### B) LTRS schedule pipeline (added 2026-08-05)
+Generates branded conference schedule outputs from an Excel workbook:
+- `python scripts/parse_ltrs2026_v1.py` — parses workbook to JSON
+- `python scripts/render_ltrs2026_booklet.py` — renders three HTML outputs
+- `python scripts/export_pdf.py` — Playwright-based HTML→PDF exporter
+- `python scripts/make_ltrs2026_schedule.py` — orchestrates all three steps
+
+Outputs produced by the pipeline:
+- `output/ltrs2026_single_page.html` — one-page continuous web/print layout
+- `output/ltrs2026_a4_two_side.html` + `.pdf` — two-sided A4 duplex (front/back)
+- `output/ltrs2026_a4_fold_card.html` — landscape fold card (Q4|Q1 outer, Q2|Q3 inner)
+
+Run the LTRS pipeline from repo root:
+```powershell
+.\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
+```
+
+Input file expected at: `input/LTRS2026 schedule.xlsx`, sheet `LTRS2026 (v1)`.
+
+## Current Priority State
 This repo generates learner journey artifacts from a Word `.docx`:
 - LJM poster (PNG)
 - MLO card (PNG, transparent header band)
@@ -332,6 +360,25 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-08-05 — LTRS schedule pipeline)
+- Built the full LTRS 2026 conference schedule pipeline from scratch:
+  - `parse_ltrs2026_v1.py`: parses Excel workbook → structured JSON + parse report.
+  - `render_ltrs2026_booklet.py`: renders three branded HTML outputs from JSON.
+  - `export_pdf.py`: Playwright headless Chromium HTML→PDF exporter.
+  - `make_ltrs2026_schedule.py`: orchestrates all three steps end-to-end.
+- Three HTML/PDF outputs:
+  - **Single page** (`_single_page.html`): continuous branded schedule, HTML only (PDF deliberately disabled — HTML is the deliverable here).
+  - **A4 two-side** (`_a4_two_side.html` + `.pdf`): true duplex front/back pages, schedule rows split by content weight. PDF export via Playwright with `print_background=True` and `@media screen and (max-width: 900px)` scoping to preserve 3-column layout in PDF.
+  - **Fold card** (`_a4_fold_card.html`): landscape fold imposition — sheet 1 is Q4|Q1 (outer), sheet 2 is Q2|Q3 (inner), ready for duplex landscape print + fold.
+- Visual design built on brand palette (cream, dark green, lilac, maroon) with Magnole serif and Avenir Next body fonts.
+- Named CSS variables for session row colours (`--row-event`, `--row-break`, `--row-plenary`, `--row-workshop`, `--row-presentations`) — easy to tweak.
+- Header block: logo + LTRS 2026 lockup, Magnole-styled theme line, conference line, date.
+- `print-color-adjust: exact` and `@media print` background rules ensure colours survive PDF export.
+- `render_schedule_rows()` extracted as shared helper used by all three outputs.
+- `split_rows_balanced()` weights rows by content density for fair page splitting.
+- Spacing pass applied: workshops, plenary, and presentation rows have more breathing room (padding, line-height, talk-list gaps).
+- Key known note: if the PDF file is open in a viewer when the pipeline runs, it will fail with a permission error. Close the PDF first.
 
 ## Session Log (2026-07-22 follow-up 9)
 - User asked whether ~40-word alt text (the LJM poster's) is "normal." Answered inline: WCAG's

@@ -1,8 +1,52 @@
 # LJM Renderer
 
-Generate a student-facing learner journey map from a Word `.docx` file.
+Two pipelines live in this repo:
 
-## Repo Layout
+1. **LJM / MLO pipeline** — generate a student-facing learner journey map and module learning outcomes card from a Word `.docx` file.
+2. **LTRS schedule pipeline** — generate branded conference schedule outputs (HTML + PDF) from an Excel workbook.
+
+---
+
+## LTRS Schedule Pipeline
+
+### Quick start
+
+```powershell
+.\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
+```
+
+Input: `input/LTRS2026 schedule.xlsx`, sheet `LTRS2026 (v1)`
+
+Outputs written to `output/`:
+
+| File | Description |
+|------|-------------|
+| `ltrs2026_single_page.html` | One-page continuous branded schedule |
+| `ltrs2026_a4_two_side.html` + `.pdf` | Two-sided A4 duplex (front/back) |
+| `ltrs2026_a4_fold_card.html` | Landscape fold card (Q4\|Q1 outer, Q2\|Q3 inner) |
+| `ltrs2026_parsed.json` | Structured schedule data |
+| `ltrs2026_parse_report.txt` | Human-readable parse summary |
+
+### PDF printing tips
+
+- Enable **Background graphics** in the print dialog (or use the pipeline's built-in Playwright export).
+- Two-side PDF: duplex, flip on long edge.
+- Fold card: duplex, landscape, flip on short edge; fold vertically down the centre.
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `parse_ltrs2026_v1.py` | Parse Excel workbook → JSON |
+| `render_ltrs2026_booklet.py` | Render HTML outputs from JSON |
+| `export_pdf.py` | Playwright HTML→PDF exporter |
+| `make_ltrs2026_schedule.py` | Orchestrate full pipeline |
+
+---
+
+## LJM / MLO Pipeline
+
+### Repo Layout
 
 - `input/`: source Word documents
 - `output/`: generated review text, JSON, PNG, and optional PDF
