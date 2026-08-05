@@ -21,6 +21,11 @@ Outputs produced by the pipeline:
 - `output/ltrs2026_a4_two_side.html` + `.pdf` — two-sided A4 duplex (front/back)
 - `output/ltrs2026_a4_fold_card.html` — landscape fold card (Q4|Q1 outer, Q2|Q3 inner)
 
+**Known issue (2026-08-05 evening session):** the fold card's Parallel Presentation Sessions
+panel is currently broken — unstyled/illegible, not just unpolished. See "Session Log (2026-08-05
+evening — two-pager polish + fold-card regression)" below for why, and don't patch it piecemeal;
+user wants a fresh rebuild of that panel specifically, planned as a separate future session.
+
 Run the LTRS pipeline from repo root:
 ```powershell
 .\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
@@ -360,6 +365,111 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-08-05 evening — two-pager polish + fold-card regression)
+User had exhausted their GitHub Copilot credits for the day and switched to Claude Code
+mid-project — the LTRS pipeline itself (see the session log below) was built entirely by a
+Copilot session earlier the same day; this session's starting point was "familiarize yourself
+with what Copilot built," not a from-scratch build. All changes below are in
+`render_ltrs2026_booklet.py` only — the other three LTRS scripts were untouched.
+
+- **Two-side page 2 header now matches page 1 exactly.** It previously showed a smaller
+  "LTRS 2026 / Programme Continued / {date}" banner (smaller `h1`, tighter padding, via
+  `.a4-page.continuation .schedule-header`/`.schedule-header h1` overrides). User wanted it
+  visually identical to page 1's full banner (title + Magnole theme line + conference line +
+  date) — removed those two continuation-specific overrides and copied page 1's exact header
+  markup onto page 2. The `.a4-page.continuation .schedule-table thead { display: none; }`
+  rule was deliberately left alone (that's about not repeating the Time/Event/Location column
+  headers on page 2's table, a separate and still-reasonable choice from the banner question).
+
+- **Parallel Presentation Sessions: talks now align row-by-row across all three tracks, not
+  just as an overall equal-height box.** User's ask was specific: "Elif Toker has the tallest
+  cell [...] can we pad out Chris and Fatimah so the bottom of the cells matches Elif's" — i.e.
+  talk *N* of every track should be the same height as talk *N* of every other track, not just
+  the tracks' overall bottoms lining up. This needed a real restructure, not a CSS tweak:
+  - Removed `render_track_card()` (rendered each track as an independent
+    `<section class="track-card"><ul class="talk-list">...</ul></section>`, no relationship
+    between one track's Nth talk and another's).
+  - Added `render_talk_cell()` + `render_track_grid()`: computes `max_talks` across all tracks
+    in the block, then builds one `<div class="track-row">` per talk-index, pulling that
+    index's talk from each track (or an empty matching-styled cell if a shorter track has run
+    out) — plus one header row for title/room/chair. `display: table-row` on `.track-row` /
+    `display: table-cell` on `.track-cell` gets a genuine per-row equal-height guarantee
+    (the same mechanism plain HTML tables have always had) — far more reliable than relying on
+    CSS Grid's implicit `align-items: normal` (which computes to `stretch`, and did measure as
+    already-equal in a quick Playwright/Chromium check *before* this rewrite, but the user's
+    own browser view kept showing genuinely uneven heights regardless — never fully root-caused
+    which engine/context was diverging, so the row-table structure was built specifically to be
+    the most cross-engine-robust option rather than trusting Grid stretch further).
+  - This also incidentally fixed the earlier "make the whole box equal height" ask from the
+    same evening (previously done with `display: table`/`table-cell` on `.track-grid` itself
+    directly wrapping each `<section class="track-card">` as a whole-track cell) — that
+    intermediate version is fully superseded by the row-based one, not layered on top of it.
+
+- **Track headers (e.g. "Compassion and Support / Darwin - D208 / Chaired by: TBC") given a
+  dark green band with cream text**, on user's observation that header text and talk text were
+  the same visual weight and blended together. Reused the existing green/cream pairing already
+  established elsewhere (banner, Time column) rather than introducing a new colour — scoped via
+  `.row-parallel_sessions .track-row-header .track-cell` (higher specificity than the general
+  `.row-parallel_sessions .track-cell` lilac rule, so it reliably overrides regardless of
+  source order).
+
+- **Divider style consistency pass**, prompted by user noticing dotted talk-separator lines
+  next to solid structural borders ("someone could argue..."). Two rounds:
+  1. Changed all dotted `border-top` separators (both the new track-grid talk rows *and* the
+     pre-existing Plenary `.talk-list li` separators, which had been missed in the first pass —
+     caught when user asked "did you do plenary?") to a thin solid line at low opacity
+     (`rgba(23, 31, 32, 0.16)`), so only line *weight/opacity* varies, not style.
+  2. User then flagged that the track-grid's talk separators bled edge-to-edge (touching the
+     column borders) while Plenary's separators sit inset within their own padding — asked to
+     make Plenary full-width to match (i.e. bring track-grid *up* to Plenary's boldness). Went
+     the other way by mistake (made track-grid inset to match Plenary) — user actually preferred
+     the accidental result, so kept it. Implementation: added a `.talk-body` inner wrapper div
+     around each talk's content (`render_talk_cell()`), moved the separator border onto that
+     wrapper instead of the outer `.talk-cell`, since a table-cell's own border always spans its
+     full box edge-to-edge with no way to inset it directly — an inner element sitting inside
+     the cell's own padding was the only way to get an inset line. The strong divider under each
+     track's green header deliberately stays full-width/edge-to-edge (`.track-row-header
+     .track-cell`'s own border) — that's a major structural boundary, not a repeating separator,
+     mirroring how the *original* pre-refactor design already distinguished the two (the old
+     `.track-chair` used a negative-margin trick specifically to bleed that one line full-width
+     while leaving `.talk-list li` separators naturally inset).
+  - Landed on a found design rule worth keeping for future additions: full-width/bold dividers
+    mark *parallel* boundaries (concurrent tracks, concurrent workshops in different rooms);
+    inset/light dividers mark *sequential* items within one place (talks one after another in
+    the same track or the same Plenary session). Not designed in from the start, but held up
+    when checked against every section, including ones not touched this session
+    (Parallel Workshops' full-width row borders are the master schedule-table's own row
+    boundaries, not a nested separator — genuinely a different structural level, not an
+    inconsistency, despite looking like one at a glance).
+
+- **Location column: header and cells now both left-aligned** (previously header inherited a
+  blanket `text-align: left` from `.schedule-table thead th` while `.location-col` cells were
+  explicitly centered — a real mismatch). Tried centering the header to match first; user then
+  asked to try the opposite (left-align the cells to match the header) and preferred that one
+  — "once an Excel guy, always an Excel guy."
+
+- **End-of-session code review** (user's request, prompted by "when you tweak as much as we
+  have, things can get messy and Frankensteiny"): found and confirmed via a live screenshot
+  that the fold card's Parallel Presentation Sessions panel is now broken — see the "Known
+  issue" note above the LTRS scripts list. Root cause: `render_fold_card_a4_html()` shares
+  `render_schedule_rows()` → `render_event_cell()` → `render_track_grid()` with single-page and
+  two-side, but fold-card keeps its own separate, compact CSS block (~line 1690s) that still
+  targets the pre-refactor class names (`.track-card`, `.talk-list li`) — none of the new
+  `.track-row`/`.track-cell`/`.track-header-cell`/`.talk-body` classes have any rule there.
+  User already knew fold-card needed work and wants a fresh rebuild of that panel rather than a
+  patch — explicitly deferred, not fixed this session. Two smaller/non-urgent findings from the
+  same review, also not acted on: `build_onepager_rows()` sets a `"location": "See tracks"`
+  value for workshop_block/presentation_session_block rows that's computed but never actually
+  rendered anywhere (harmless dead data); and single-page/two-side/fold-card each hand-duplicate
+  their own copy of the schedule-table/track-grid CSS with no shared source, which is exactly
+  the gap that let the fold-card regression happen silently — worth extracting into a shared
+  CSS-building function next time any of the shared `render_*` functions' markup changes.
+
+- **Deferred to a future session (both explicitly "tomorrow," not tonight):**
+  1. Fresh rebuild of the fold card's Parallel Presentation Sessions panel.
+  2. Some kind of branding treatment for the bare space at the bottom of two-side page 2 —
+     user hasn't specified what yet, just flagged the space looks empty.
 
 ## Session Log (2026-08-05 — LTRS schedule pipeline)
 - Built the full LTRS 2026 conference schedule pipeline from scratch:

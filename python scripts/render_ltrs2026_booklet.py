@@ -184,26 +184,49 @@ def build_onepager_rows(programme: list[dict]) -> list[dict]:
     return rows
 
 
-def render_track_card(track: dict) -> str:
-  talks_html = ""
-  for talk in track.get("talks", []):
-    presenter = str(talk.get("presenter", "")).strip()
-    title = str(talk.get("title", "")).strip()
-    title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
-    presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
-    talks_html += f"<li>{title_html}{presenter_html}</li>"
+def render_talk_cell(talk: dict | None) -> str:
+  if not talk:
+    return '<div class="track-cell talk-cell"><div class="talk-body"></div></div>'
 
-  chair_html = ""
-  if track.get("chair"):
-    chair_html = f"<div class=\"track-chair\">Chaired by: {e(track.get('chair', ''))}</div>"
+  presenter = str(talk.get("presenter", "")).strip()
+  title = str(talk.get("title", "")).strip()
+  title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
+  presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+  return f'<div class="track-cell talk-cell"><div class="talk-body">{title_html}{presenter_html}</div></div>'
+
+
+def render_track_grid(tracks: list[dict]) -> str:
+  if not tracks:
+    return ""
+
+  max_talks = max((len(track.get("talks", [])) for track in tracks), default=0)
+
+  header_cells = ""
+  for track in tracks:
+    chair_html = ""
+    if track.get("chair"):
+      chair_html = f"<div class=\"track-chair\">Chaired by: {e(track.get('chair', ''))}</div>"
+    header_cells += f"""
+    <div class="track-cell track-header-cell">
+      <h4>{e(track.get('title', 'Track'))}</h4>
+      <div class="track-room">{e(track.get('room', ''))}</div>
+      {chair_html}
+    </div>
+    """
+
+  talk_rows_html = ""
+  for i in range(max_talks):
+    row_cells = ""
+    for track in tracks:
+      talks = track.get("talks", [])
+      row_cells += render_talk_cell(talks[i] if i < len(talks) else None)
+    talk_rows_html += f'<div class="track-row">{row_cells}</div>'
 
   return f"""
-  <section class="track-card">
-    <h4>{e(track.get('title', 'Track'))}</h4>
-    <div class="track-room">{e(track.get('room', ''))}</div>
-    {chair_html}
-    <ul class="talk-list">{talks_html}</ul>
-  </section>
+  <div class="track-grid">
+    <div class="track-row track-row-header">{header_cells}</div>
+    {talk_rows_html}
+  </div>
   """
 
 
@@ -217,14 +240,13 @@ def render_event_cell(row: dict) -> str:
         </div>
         """
 
-    if kind in {"parallel_sessions", "parallel_workshops"}:
+    if kind == "parallel_sessions":
         tracks = row.get("tracks", [])
-        tracks_html = "".join(render_track_card(track) for track in tracks)
         return f"""
         <div class="event-shell">
           <h3>{e(row.get('title', ''))}</h3>
           <p class="event-note">Concurrent tracks run in this shared time slot.</p>
-          <div class="track-grid">{tracks_html}</div>
+          {render_track_grid(tracks)}
         </div>
         """
 
@@ -814,7 +836,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     border: 1px solid rgba(23, 31, 32, 0.42);
     padding: 4px 5px;
     vertical-align: top;
-    text-align: center;
+    text-align: left;
     font-size: 12px;
     font-weight: 700;
     background: var(--cream);
@@ -848,9 +870,10 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .track-grid {{
     margin-top: 3px;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 3px;
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+    border-spacing: 3px 0;
   }}
   .row-workshops-header .event-col {{
     padding-bottom: 4px;
@@ -870,16 +893,34 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .row-workshop-item .talk-title {{
     margin-top: 0;
   }}
-  .track-card {{
-    border: 1px solid rgba(23, 31, 32, 0.22);
+  .track-row {{
+    display: table-row;
+  }}
+  .track-cell {{
+    display: table-cell;
+    vertical-align: top;
+    border-left: 1px solid rgba(23, 31, 32, 0.22);
+    border-right: 1px solid rgba(23, 31, 32, 0.22);
     background: #f8f5ec;
     padding: 5px 6px;
   }}
-  .row-parallel_sessions .track-card,
-  .row-parallel_workshops .track-card {{
+  .track-row-header .track-cell {{
+    border-top: 1px solid rgba(23, 31, 32, 0.22);
+    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+  }}
+  .track-row:last-child .track-cell {{
+    border-bottom: 1px solid rgba(23, 31, 32, 0.22);
+  }}
+  .row-parallel_sessions .track-cell,
+  .row-parallel_workshops .track-cell {{
     background: #d8cbf1;
   }}
-  .track-card h4 {{
+  .row-parallel_sessions .track-row-header .track-cell,
+  .row-parallel_workshops .track-row-header .track-cell {{
+    background: var(--green);
+    color: var(--cream);
+  }}
+  .track-header-cell h4 {{
     font-size: 13px;
     line-height: 1.08;
     margin: 0;
@@ -891,16 +932,15 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .track-chair {{
     display: block;
-    margin-left: -6px;
-    margin-right: -6px;
-    padding-left: 6px;
-    padding-right: 6px;
     font-size: 11px;
     font-style: italic;
     margin-top: 3px;
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
-    padding-bottom: 3px;
-    margin-bottom: 3px;
+  }}
+  .talk-body {{
+    border-top: 1px solid rgba(23, 31, 32, 0.16);
+  }}
+  .track-row-header + .track-row .talk-body {{
+    border-top: 0;
   }}
   .talk-list {{
     margin: 4px 0 0;
@@ -910,7 +950,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px dotted rgba(23, 31, 32, 0.45);
+    border-top: 1px solid rgba(23, 31, 32, 0.16);
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -1108,12 +1148,6 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     line-height: 1.2;
     margin-top: 2px;
   }}
-  .a4-page.continuation .schedule-header {{
-    padding: 6px 10px;
-  }}
-  .a4-page.continuation .schedule-header h1 {{
-    font-size: 36px;
-  }}
   .a4-page.continuation .schedule-table thead {{
     display: none;
   }}
@@ -1170,7 +1204,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     border: 1px solid rgba(23, 31, 32, 0.42);
     padding: 4px 5px;
     vertical-align: top;
-    text-align: center;
+    text-align: left;
     font-size: 12px;
     font-weight: 700;
     background: var(--cream);
@@ -1204,9 +1238,10 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .track-grid {{
     margin-top: 3px;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 3px;
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+    border-spacing: 3px 0;
   }}
   .row-workshops-header .event-col {{
     padding-bottom: 4px;
@@ -1226,16 +1261,34 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .row-workshop-item .talk-title {{
     margin-top: 0;
   }}
-  .track-card {{
-    border: 1px solid rgba(23, 31, 32, 0.22);
+  .track-row {{
+    display: table-row;
+  }}
+  .track-cell {{
+    display: table-cell;
+    vertical-align: top;
+    border-left: 1px solid rgba(23, 31, 32, 0.22);
+    border-right: 1px solid rgba(23, 31, 32, 0.22);
     background: #f8f5ec;
     padding: 5px 6px;
   }}
-  .row-parallel_sessions .track-card,
-  .row-parallel_workshops .track-card {{
+  .track-row-header .track-cell {{
+    border-top: 1px solid rgba(23, 31, 32, 0.22);
+    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+  }}
+  .track-row:last-child .track-cell {{
+    border-bottom: 1px solid rgba(23, 31, 32, 0.22);
+  }}
+  .row-parallel_sessions .track-cell,
+  .row-parallel_workshops .track-cell {{
     background: #d8cbf1;
   }}
-  .track-card h4 {{
+  .row-parallel_sessions .track-row-header .track-cell,
+  .row-parallel_workshops .track-row-header .track-cell {{
+    background: var(--green);
+    color: var(--cream);
+  }}
+  .track-header-cell h4 {{
     font-size: 13px;
     line-height: 1.08;
     margin: 0;
@@ -1247,16 +1300,15 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .track-chair {{
     display: block;
-    margin-left: -6px;
-    margin-right: -6px;
-    padding-left: 6px;
-    padding-right: 6px;
     font-size: 11px;
     font-style: italic;
     margin-top: 3px;
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
-    padding-bottom: 3px;
-    margin-bottom: 3px;
+  }}
+  .talk-body {{
+    border-top: 1px solid rgba(23, 31, 32, 0.16);
+  }}
+  .track-row-header + .track-row .talk-body {{
+    border-top: 0;
   }}
   .talk-list {{
     margin: 4px 0 0;
@@ -1266,7 +1318,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px dotted rgba(23, 31, 32, 0.45);
+    border-top: 1px solid rgba(23, 31, 32, 0.16);
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -1388,7 +1440,8 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
         <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
         <h1>LTRS 2026</h1>
       </div>
-      <p class="subtitle-line">Programme Continued</p>
+      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
       <p class="source-line">September 10th, 2026</p>
     </header>
     <table class="schedule-table" aria-describedby="schedule-caption-back">

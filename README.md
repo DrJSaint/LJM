@@ -23,9 +23,11 @@ Outputs written to `output/`:
 |------|-------------|
 | `ltrs2026_single_page.html` | One-page continuous branded schedule |
 | `ltrs2026_a4_two_side.html` + `.pdf` | Two-sided A4 duplex (front/back) |
-| `ltrs2026_a4_fold_card.html` | Landscape fold card (Q4\|Q1 outer, Q2\|Q3 inner) |
+| `ltrs2026_a4_fold_card.html` | Landscape fold card (Q4\|Q1 outer, Q2\|Q3 inner) — **currently broken, see below** |
 | `ltrs2026_parsed.json` | Structured schedule data |
 | `ltrs2026_parse_report.txt` | Human-readable parse summary |
+
+**Known issue:** the fold card's Parallel Presentation Sessions panel is currently unstyled/illegible (not just unpolished) — see CLAUDE.md's "two-pager polish + fold-card regression" session log for the root cause. Needs a rebuild; don't rely on the fold-card output for that section until it's fixed. The single-page and two-side outputs are unaffected.
 
 ### PDF printing tips
 
