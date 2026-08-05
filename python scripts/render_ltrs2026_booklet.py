@@ -634,20 +634,45 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     margin-bottom: 8px;
     text-align: center;
   }}
+  .schedule-header-top {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 6px;
+  }}
+  .schedule-header-logo {{
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
+    object-fit: contain;
+    display: block;
+  }}
   .schedule-header h1 {{
     font-size: 48px;
     color: var(--cream);
     margin: 0;
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    line-height: 0.95;
   }}
-  .schedule-header p {{
+  .schedule-header .subtitle-line {{
     margin-top: 4px;
     font-size: 14px;
     line-height: 1.2;
   }}
+  .schedule-header .subtitle-line.magnole {{
+    font-family: "Magnole", Georgia, serif;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 1.15;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }}
   .source-line {{
-    font-size: 11px;
-    margin-top: 6px;
-    opacity: 0.88;
+    font-size: 14px;
+    line-height: 1.2;
+    margin-top: 2px;
   }}
   .sr-only {{
     position: absolute;
@@ -881,10 +906,13 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
 <body>
   <main class="single-page">
     <header class="schedule-header" role="banner">
-      <h1>LTRS 2026</h1>
-      <p>The Future of Learning in Higher Ed</p>
-      <p>Learning, Teaching, Research and Scholarship Conference</p>
-      <p class="source-line">Source: {e(source_name)}</p>
+      <div class="schedule-header-top">
+        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <h1>LTRS 2026</h1>
+      </div>
+      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
+      <p class="source-line">September 10th, 2026</p>
     </header>
 
     <table class="schedule-table" aria-describedby="schedule-caption">
