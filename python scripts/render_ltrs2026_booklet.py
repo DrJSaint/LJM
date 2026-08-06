@@ -28,6 +28,10 @@ GREEN = "#195C4D"
 BLUE = "#70ACE9"
 LILAC = "#D8CBF1"
 MAROON = "#710704"
+WHITE = "#FFFFFF"
+BORDER_GREY = "#999994"  # uniform border color, computed to match how the old translucent border looked over cream
+SCREEN_PREVIEW_BACKDROP = "#D9D9D9"  # browser-only page-boundary backdrop, never printed
+ROW_BREAK = "#EDF6EF"  # pale mint background for Refreshments Break rows
 
 # Quick single-page/two-side toggles — change the value, regenerate, done.
 PAGE_FOOTER_LOGO = "cp_gt.png"  # or "cp_bt.png" for the black-text variant
@@ -630,8 +634,11 @@ def base_css() -> str:
       --blue: {BLUE};
       --lilac: {LILAC};
       --maroon: {MAROON};
+      --white: {WHITE};
+      --border-grey: {BORDER_GREY};
+      --screen-preview-backdrop: {SCREEN_PREVIEW_BACKDROP};
       --row-event: var(--cream);
-      --row-break: #edf6ef;
+      --row-break: {ROW_BREAK};
       --row-plenary: var(--lilac);
       --row-workshop: var(--lilac);
       --row-presentations: var(--lilac);
@@ -802,13 +809,13 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    border: 1px solid #999994;
-    background: #fff;
+    background: var(--white);
   }}
   .col-time {{ width: 5.2em; }}
   .col-location {{ width: 7.6em; }}
   .schedule-table thead th {{
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
+    border-bottom: 0;
     padding: 4px 6px;
     font-size: 11px;
     font-weight: 700;
@@ -825,19 +832,19 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     font-weight: 700;
     line-height: 1.05;
     padding: 4px 5px;
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     text-align: left;
     vertical-align: top;
   }}
   .event-col {{
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     padding: 3px 6px;
     vertical-align: top;
     background: var(--cream);
   }}
   .location-col {{
     width: 18%;
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     padding: 4px 5px;
     vertical-align: top;
     text-align: left;
@@ -868,7 +875,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     margin-right: -6px;
     padding-left: 6px;
     padding-right: 6px;
-    border-bottom: 1px solid #999994;
+    border-bottom: 1px solid var(--border-grey);
     padding-bottom: 2px;
     margin-bottom: 2px;
   }}
@@ -903,21 +910,21 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .track-cell {{
     display: table-cell;
     vertical-align: top;
-    border-left: 1px solid #999994;
-    border-right: 1px solid #999994;
-    background: #f8f5ec;
+    border-left: 1px solid var(--border-grey);
+    border-right: 1px solid var(--border-grey);
+    background: var(--cream);
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
-    border-top: 1px solid #999994;
-    border-bottom: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
+    border-bottom: 1px solid var(--border-grey);
   }}
   .track-row:last-child .track-cell {{
-    border-bottom: 1px solid #999994;
+    border-bottom: 1px solid var(--border-grey);
   }}
   .row-parallel_sessions .track-cell,
   .row-parallel_workshops .track-cell {{
-    background: #d8cbf1;
+    background: var(--lilac);
   }}
   .row-parallel_sessions .track-row-header .track-cell,
   .row-parallel_workshops .track-row-header .track-cell {{
@@ -941,7 +948,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     margin-top: 3px;
   }}
   .talk-body {{
-    border-top: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
   }}
   .track-row-header + .track-row .talk-body {{
     border-top: 0;
@@ -954,7 +961,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -1031,7 +1038,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     .location-col {{ border-top: 0; text-align: left; }}
   }}
   @media print {{
-    body {{ background: #fff; }}
+    body {{ background: var(--white); }}
     .single-page {{ margin: 0; padding: 0; }}
   }}
   </style>
@@ -1167,13 +1174,13 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    border: 1px solid #999994;
-    background: #fff;
+    background: var(--white);
   }}
   .col-time {{ width: 5.2em; }}
   .col-location {{ width: 7.6em; }}
   .schedule-table thead th {{
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
+    border-bottom: 0;
     padding: 4px 6px;
     font-size: 11px;
     font-weight: 700;
@@ -1201,19 +1208,19 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     font-weight: 700;
     line-height: 1.05;
     padding: 4px 5px;
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     text-align: left;
     vertical-align: top;
   }}
   .event-col {{
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     padding: 3px 6px;
     vertical-align: top;
     background: var(--cream);
   }}
   .location-col {{
     width: 18%;
-    border: 1px solid #999994;
+    border: 1px solid var(--border-grey);
     padding: 4px 5px;
     vertical-align: top;
     text-align: left;
@@ -1244,7 +1251,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     margin-right: -6px;
     padding-left: 6px;
     padding-right: 6px;
-    border-bottom: 1px solid #999994;
+    border-bottom: 1px solid var(--border-grey);
     padding-bottom: 2px;
     margin-bottom: 2px;
   }}
@@ -1279,21 +1286,21 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .track-cell {{
     display: table-cell;
     vertical-align: top;
-    border-left: 1px solid #999994;
-    border-right: 1px solid #999994;
-    background: #f8f5ec;
+    border-left: 1px solid var(--border-grey);
+    border-right: 1px solid var(--border-grey);
+    background: var(--cream);
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
-    border-top: 1px solid #999994;
-    border-bottom: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
+    border-bottom: 1px solid var(--border-grey);
   }}
   .track-row:last-child .track-cell {{
-    border-bottom: 1px solid #999994;
+    border-bottom: 1px solid var(--border-grey);
   }}
   .row-parallel_sessions .track-cell,
   .row-parallel_workshops .track-cell {{
-    background: #d8cbf1;
+    background: var(--lilac);
   }}
   .row-parallel_sessions .track-row-header .track-cell,
   .row-parallel_workshops .track-row-header .track-cell {{
@@ -1317,7 +1324,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     margin-top: 3px;
   }}
   .talk-body {{
-    border-top: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
   }}
   .track-row-header + .track-row .talk-body {{
     border-top: 0;
@@ -1330,7 +1337,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid #999994;
+    border-top: 1px solid var(--border-grey);
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -1410,7 +1417,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     }}
   }}
   @media screen {{
-    body {{ background: #d9d9d9; padding: 10px; }}
+    body {{ background: var(--screen-preview-backdrop); padding: 10px; }}
     .a4-page {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
   }}
   </style>

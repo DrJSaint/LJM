@@ -38,6 +38,14 @@ Near the top of `render_ltrs2026_booklet.py`, alongside the brand palette consta
 
 Change the value and rerun the pipeline; no other edits needed.
 
+### Colors
+
+Every color used in single-page and two-side is a single named constant at the top of
+`render_ltrs2026_booklet.py` (`CREAM`, `DARK`, `GREEN`, `BLUE`, `LILAC`, `MAROON`, `WHITE`,
+`BORDER_GREY`, `SCREEN_PREVIEW_BACKDROP`, `ROW_BREAK`) — nothing is hardcoded elsewhere in
+those two outputs. Change a constant, rerun the pipeline, and it updates everywhere that color
+is used. Fold-card keeps its own separate, independent set of color values for now.
+
 ### PDF printing tips
 
 - Enable **Background graphics** in the print dialog (or use the pipeline's built-in Playwright export).

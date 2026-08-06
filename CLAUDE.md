@@ -370,6 +370,76 @@ If Streamlit is missing in venv:
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
 
+## Session Log (2026-08-06 follow-up — border-width bug, pipeline reporting bug, full color centralization)
+Same evening, continued from the branding/border-color session below. All changes in
+`render_ltrs2026_booklet.py` (single-page/two-side scope only, fold-card untouched) plus one
+fix in `make_ltrs2026_schedule.py`.
+
+- **Fixed a genuine double-width border bug**, found by actually measuring rendered pixels
+  rather than trusting the CSS. User zoomed into two spots (top of page 1's table, top of
+  page 2's table) and asked "can you see it?" — verified empirically via Playwright pixel
+  sampling (not guesswork): every border in the schedule table renders at 4 device-px except
+  two specific seams, which rendered at a genuine 8 device-px (exactly double), confirming the
+  visual perception was correct, not an illusion.
+  - **Page 1 seam** (header row → first data row): the `<thead>` cell's own border and the
+    first `<tbody>` row's own border weren't collapsing cleanly — a known `border-collapse`
+    quirk specifically at `thead`/`tbody` boundaries (works fine for row-to-row collapses
+    *within* the same section). Fixed by setting `border-bottom: 0` on
+    `.schedule-table thead th`, leaving the first body row's own top border as the sole line.
+  - **Page 2 seam** (very top of the table): two-side hides its `<thead>` entirely
+    (`display: none`), so the exposed seam there was the `<table>` element's own `border`
+    property colliding with the first visible row's border — a different pairing than page 1's
+    case, same root mechanism (two competing border declarations not merging). Fixed by
+    removing `.schedule-table`'s own `border` declaration outright — every outer cell already
+    has a full border on all four sides, so the table's own border was pure redundancy that
+    happened to double up at exactly this one edge.
+  - Verification method worth remembering for next time: `getBoundingClientRect()` comparisons
+    were misleading here (found a spurious 0.5px "gap" that had nothing to do with the actual
+    bug and persisted even after removing the table border) — actually sampling rendered pixel
+    colors down a vertical strip (`Image.open(screenshot).getpixel(...)`) was what nailed the
+    exact width and location. Re-tested by genuinely locking the PDF file open
+    (`msvcrt.locking`) and confirming the real `PermissionError` — don't trust a passing test
+    that didn't actually reproduce the failure condition (a first attempt using plain
+    `open(path, "r+b")` did *not* trigger Windows file locking and gave a false pass).
+
+- **Fixed `make_ltrs2026_schedule.py`'s misleading success report**, prompted by user noticing
+  the two-side PDF hadn't actually regenerated (stale file timestamp) despite the pipeline's
+  final summary claiming `[OK]`. Root cause: the final summary's `print(f"[OK] A4 two side
+  PDF: ...")` line was unconditional — it printed regardless of whether the `export_pdf.py`
+  subprocess actually succeeded, even though an inline `[WARN]` was correctly printed earlier
+  when it failed (that warning was just easy to miss among the rest of the output, and the
+  script's exit code stayed `0` either way). Added a `pdf_ok` flag driven by the same
+  `run(pdf_cmd) != 0` check already in place; the summary now prints `[FAIL] ...` when export
+  failed, and `main()` returns `1` instead of always `0`. Also removed an unused
+  `single_page_pdf` variable found while reading through the file (single-page PDF export is
+  intentionally disabled — see the pipeline overview above — so this was dead code, not a
+  planned-but-unwired feature). User explicitly said not to worry about the underlying source
+  `.xlsx` changing content between runs mid-session — that's the intended workflow, not
+  something to flag as unexpected.
+
+- **Full color centralization**, prompted by "is our beige stored in one place too?" after the
+  brand-green fix earlier the same evening. Audited every hardcoded hex color in the
+  single-page/two-side scope (previously: `#999994` border grey × 29, `#f8f5ec` × 2, `#d8cbf1`
+  × 2, `#fff` × 3, `#d9d9d9` × 1, plus `--row-break: #edf6ef` already living directly in `:root`
+  with no matching Python constant) and gave every one of them a single source of truth:
+  - `#f8f5ec` was a near-duplicate of `CREAM` (only 1–4 points off per RGB channel — the kind
+    of accidental drift that's invisible until you go looking) → now `var(--cream)`.
+  - `#d8cbf1` was an *exact* duplicate of `LILAC`, just never wired to the variable → now
+    `var(--lilac)`.
+  - Added proper named constants for values that were fine as colors but still "stray" in the
+    sense of having no single source: `WHITE`, `BORDER_GREY` (the uniform grey from the earlier
+    border-color session), `SCREEN_PREVIEW_BACKDROP` (the browser-only page-boundary grey,
+    never printed), and `ROW_BREAK` (previously a bare hex directly in the `--row-break`
+    `:root` line). All four now follow the same `CONSTANT = "#hex"` → `:root { --x: {CONSTANT}
+    }` → `var(--x)` pattern as the original six palette colors.
+  - Implementation was a line-range-scoped `sed` (function boundaries re-checked fresh
+    immediately before running it, since line numbers shift after every edit) rather than
+    `replace_all`, same reasoning as the earlier border-color pass: several of these exact hex
+    values also appear in fold-card's own independent copy and must not be touched there.
+  - Verified with a fresh PDF render and a direct visual comparison against the prior render —
+    intentionally identical in appearance, since this was a pure "same colors, now properly
+    sourced" refactor, not a design change.
+
 ## Session Log (2026-08-06 — branding footer, brand green fix, uniform borders)
 Follow-up to the previous evening's two-pager polish session, same scope discipline: everything
 below touches `render_ltrs2026_booklet.py` only, and only the single-page/two-side code paths —

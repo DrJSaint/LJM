@@ -76,10 +76,10 @@ def main() -> int:
         return 1
 
     single_page_html = (output_dir / f"{args.base_name}_single_page.html").resolve()
-    single_page_pdf = (output_dir / f"{args.base_name}_single_page.pdf").resolve()
     two_side_html = (output_dir / f"{args.base_name}_a4_two_side.html").resolve()
     two_side_pdf = (output_dir / f"{args.base_name}_a4_two_side.pdf").resolve()
 
+    pdf_ok = True
     for html_path, pdf_path in [
         (two_side_html, two_side_pdf),
     ]:
@@ -90,6 +90,7 @@ def main() -> int:
             "--output", str(pdf_path),
         ]
         if run(pdf_cmd) != 0:
+            pdf_ok = False
             print(f"[WARN] PDF export failed for {html_path.name} — HTML output is still available")
 
     print("[DONE] LTRS outputs generated")
@@ -97,9 +98,12 @@ def main() -> int:
     print(f"[OK] Parse report:    {parse_report}")
     print(f"[OK] Single page:     {single_page_html}")
     print(f"[OK] A4 two side:     {two_side_html}")
-    print(f"[OK] A4 two side PDF: {two_side_pdf}")
+    if pdf_ok:
+        print(f"[OK] A4 two side PDF: {two_side_pdf}")
+    else:
+        print(f"[FAIL] A4 two side PDF: {two_side_pdf} (export failed — see warning above)")
     print(f"[OK] A4 fold card:    {output_dir / (args.base_name + '_a4_fold_card.html')}")
-    return 0
+    return 0 if pdf_ok else 1
 
 
 if __name__ == "__main__":
