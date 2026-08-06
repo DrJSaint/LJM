@@ -238,7 +238,43 @@ def render_track_grid(tracks: list[dict]) -> str:
   """
 
 
-def render_event_cell(row: dict) -> str:
+def render_track_stack(tracks: list[dict]) -> str:
+  # Fold-card's own dedicated track renderer — panels are too narrow for three
+  # side-by-side columns, so tracks stack one under another instead. Deliberately
+  # separate from render_track_grid() so a future two-pager change can't silently
+  # break this panel again the way it did before this rebuild.
+  if not tracks:
+    return ""
+
+  items_html = ""
+  for track in tracks:
+    chair_html = ""
+    if track.get("chair"):
+      chair_html = f"<div class=\"track-stack-chair\">Chaired by: {e(track.get('chair', ''))}</div>"
+
+    talks_html = ""
+    for talk in track.get("talks", []):
+      presenter = str(talk.get("presenter", "")).strip()
+      title = str(talk.get("title", "")).strip()
+      title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
+      presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+      talks_html += f"<li>{title_html}{presenter_html}</li>"
+
+    items_html += f"""
+    <div class="track-stack-item">
+      <div class="track-stack-head">
+        <span class="track-stack-title">{e(track.get('title', 'Track'))}</span>
+        <span class="track-stack-room">{e(track.get('room', ''))}</span>
+      </div>
+      {chair_html}
+      <ul class="track-stack-talks">{talks_html}</ul>
+    </div>
+    """
+
+  return f'<div class="track-stack">{items_html}</div>'
+
+
+def render_event_cell(row: dict, compact: bool = False) -> str:
     kind = row.get("kind")
 
     if kind == "parallel_workshops":
@@ -250,11 +286,12 @@ def render_event_cell(row: dict) -> str:
 
     if kind == "parallel_sessions":
         tracks = row.get("tracks", [])
+        grid_html = render_track_stack(tracks) if compact else render_track_grid(tracks)
         return f"""
         <div class="event-shell">
           <h3>{e(row.get('title', ''))}</h3>
           <p class="event-note">Concurrent tracks run in this shared time slot.</p>
-          {render_track_grid(tracks)}
+          {grid_html}
         </div>
         """
 
@@ -290,7 +327,7 @@ def render_event_cell(row: dict) -> str:
     """
 
 
-def render_schedule_rows(rows: list[dict]) -> str:
+def render_schedule_rows(rows: list[dict], compact: bool = False) -> str:
     rows_html = ""
     for row in rows:
         row_class = f"schedule-row row-{row.get('kind', 'event')}"
@@ -310,7 +347,7 @@ def render_schedule_rows(rows: list[dict]) -> str:
             rows_html += f"""
             <tr class="{row_class} row-workshops-header">
               <th scope="row" class="time-col" rowspan="{total_rows}">{e(row.get('time', ''))}</th>
-              <td class="event-col">{render_event_cell(row)}</td>
+              <td class="event-col">{render_event_cell(row, compact)}</td>
               <td class="location-col workshop-location-hint"></td>
             </tr>
             """
@@ -337,14 +374,14 @@ def render_schedule_rows(rows: list[dict]) -> str:
             rows_html += f"""
             <tr class="{row_class}">
               <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
-              <td class="event-col event-col-wide" colspan="2">{render_event_cell(row)}</td>
+              <td class="event-col event-col-wide" colspan="2">{render_event_cell(row, compact)}</td>
             </tr>
             """
         else:
             rows_html += f"""
             <tr class="{row_class}">
               <th scope="row" class="time-col">{e(row.get('time', ''))}</th>
-              <td class="event-col">{render_event_cell(row)}</td>
+              <td class="event-col">{render_event_cell(row, compact)}</td>
               <td class="location-col">{e(row.get('location', ''))}</td>
             </tr>
             """
@@ -393,15 +430,19 @@ def split_rows_balanced(rows: list[dict], parts: int) -> list[list[dict]]:
 
     weights = [row_layout_weight(row) for row in rows]
     total = sum(weights)
-    target = max(1, total / parts)
 
     groups: list[list[dict]] = []
     current: list[dict] = []
     running = 0
+    consumed = 0  # weight already finalized into `groups`
 
     for idx, row in enumerate(rows):
         remaining_rows = len(rows) - idx
         remaining_groups = parts - len(groups)
+        # Recompute the target from what's actually left, not a fixed total/parts —
+        # a fixed target under-splits once earlier groups run over it (e.g. a single
+        # heavy block), silently leaving later groups empty instead of rebalancing.
+        target = (total - consumed) / remaining_groups if remaining_groups else total
 
         if (
             current
@@ -410,6 +451,7 @@ def split_rows_balanced(rows: list[dict], parts: int) -> list[list[dict]]:
             and remaining_rows >= remaining_groups
         ):
             groups.append(current)
+            consumed += running
             current = []
             running = 0
 
@@ -1490,81 +1532,11 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
 """
 
 
-def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[dict]) -> str:
-    _ = cards  # Kept for function signature compatibility.
-    rows = build_onepager_rows(programme)
-    quarters = split_rows_balanced(rows, 4)
-
-    # Imposition order for folding:
-    # Sheet 1 (outer): Q4 on left, Q1 on right
-    # Sheet 2 (inner): Q2 on left, Q3 on right
-    q1, q2, q3, q4 = quarters
-
-    def panel_html(rows_for_panel: list[dict], panel_title: str, show_primary_header: bool = False) -> str:
-        thead_html = """
-          <thead>
-            <tr>
-              <th scope=\"col\">Time</th>
-              <th scope=\"col\">Event</th>
-              <th scope=\"col\">Location</th>
-            </tr>
-          </thead>
-        """ if show_primary_header else ""
-
-        header_block = ""
-        if show_primary_header:
-            header_block = """
-          <header class=\"schedule-header\" role=\"banner\">
-            <div class=\"schedule-header-top\">
-              <img class=\"schedule-header-logo\" src=\"../assets/r_logo.png\" alt=\"Regent's University London logo\">
-              <h1>LTRS 2026</h1>
-            </div>
-            <p class=\"subtitle-line magnole\">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
-            <p class=\"subtitle-line\">Learning, Teaching, Research and Scholarship Conference</p>
-            <p class=\"source-line\">September 10th, 2026</p>
-          </header>
-            """
-        else:
-            header_block = f"""
-          <header class=\"panel-header\">
-            <h2>{e(panel_title)}</h2>
-          </header>
-            """
-
-        return f"""
-        <section class=\"panel\">
-          {header_block}
-          <table class=\"schedule-table\" aria-label=\"{e(panel_title)}\">
-            <colgroup>
-              <col class=\"col-time\">
-              <col class=\"col-event\">
-              <col class=\"col-location\">
-            </colgroup>
-            {thead_html}
-            <tbody>
-              {render_schedule_rows(rows_for_panel)}
-            </tbody>
-          </table>
-        </section>
-        """
-
-    outer_sheet = (
-        panel_html(q4, "Programme - Quarter 4")
-        + panel_html(q1, "Programme - Quarter 1", show_primary_header=True)
-    )
-    inner_sheet = (
-        panel_html(q2, "Programme - Quarter 2")
-        + panel_html(q3, "Programme - Quarter 3")
-    )
-
-    return f"""<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LTRS 2026 Schedule - A4 Fold Card</title>
-  <style>
-{base_css()}
+def fold_card_css() -> str:
+    # Extracted so the measured-fit splitter (split_rows_by_fit) can render candidate
+    # panels with the exact same styles as the real output — no risk of measuring
+    # against one set of rules and rendering with another.
+    return f"""
   @page {{ size: A4 landscape; margin: 8mm; }}
   .sheet {{
     width: 281mm;
@@ -1635,7 +1607,7 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
   }}
   .panel-header h2 {{
     margin: 0;
-    font-size: 14px;
+    font-size: 16px;
     font-family: "Magnole", Georgia, serif;
     color: var(--green);
     font-weight: 400;
@@ -1652,7 +1624,7 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
   .schedule-table thead th {{
     border: 1px solid rgba(23, 31, 32, 0.42);
     padding: 3px 4px;
-    font-size: 9px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -1663,7 +1635,7 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
   .time-col {{
     background: var(--green);
     color: var(--cream);
-    font-size: 9px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.05;
     padding: 3px 4px;
@@ -1682,20 +1654,20 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
     padding: 2px 4px;
     vertical-align: top;
     text-align: center;
-    font-size: 9px;
+    font-size: 13px;
     font-weight: 700;
     background: var(--cream);
   }}
   .event-shell h3 {{
     font-family: "Magnole", Georgia, serif;
     font-weight: 400;
-    font-size: 12px;
+    font-size: 15px;
     line-height: 1.04;
     margin: 0;
   }}
-  .detail-lines {{ margin: 1px 0 0; font-size: 8px; }}
+  .detail-lines {{ margin: 1px 0 0; font-size: 12px; }}
   .detail-line {{ margin: 0; }}
-  .event-note {{ margin: 1px 0 0; font-size: 8px; font-style: italic; }}
+  .event-note {{ margin: 1px 0 0; font-size: 12px; font-style: italic; }}
   .chair-note {{
     display: block;
     margin-left: -4px;
@@ -1706,33 +1678,37 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
     padding-bottom: 1px;
     margin-bottom: 1px;
   }}
-  .track-grid {{ margin-top: 2px; display: grid; gap: 2px; grid-template-columns: 1fr; }}
   .row-workshops-header .event-col {{ padding-bottom: 1px; }}
-  .workshop-location-hint {{ text-transform: uppercase; letter-spacing: 0.02em; font-size: 8px; }}
+  .workshop-location-hint {{ text-transform: uppercase; letter-spacing: 0.02em; font-size: 10px; }}
   .row-workshop-item .event-col {{ padding-top: 1px; padding-bottom: 1px; }}
-  .track-card {{ border: 1px solid rgba(23, 31, 32, 0.2); background: #f8f5ec; padding: 1px 3px; }}
-  .row-parallel_sessions .track-card,
-  .row-parallel_workshops .track-card {{ background: #d8cbf1; }}
-  .track-card h4 {{ font-size: 9px; line-height: 1.05; margin: 0; }}
-  .track-room {{ font-size: 8px; font-weight: 700; margin-top: 1px; }}
-  .track-chair {{
+  .track-stack {{ margin-top: 2px; display: flex; flex-direction: column; gap: 2px; }}
+  .track-stack-item {{ border: 1px solid rgba(23, 31, 32, 0.2); background: var(--cream); padding: 1px 3px; }}
+  .row-parallel_sessions .track-stack-item,
+  .row-parallel_workshops .track-stack-item {{ background: var(--lilac); }}
+  .track-stack-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }}
+  .track-stack-title {{ font-size: 13px; font-weight: 700; line-height: 1.05; }}
+  .track-stack-room {{ font-size: 12px; font-weight: 700; white-space: nowrap; }}
+  .track-stack-chair {{
     display: block;
     margin-left: -3px;
     margin-right: -3px;
     padding-left: 3px;
     padding-right: 3px;
-    font-size: 8px;
+    font-size: 12px;
     font-style: italic;
     margin-top: 1px;
     border-bottom: 1px solid rgba(23, 31, 32, 0.45);
     padding-bottom: 1px;
     margin-bottom: 1px;
   }}
+  .track-stack-talks {{ margin: 1px 0 0; padding: 0; list-style: none; }}
+  .track-stack-talks li {{ margin-top: 1px; padding-top: 1px; border-top: 1px dotted rgba(23, 31, 32, 0.35); }}
+  .track-stack-talks li:first-child {{ border-top: 0; margin-top: 0; padding-top: 0; }}
   .talk-list {{ margin: 1px 0 0; padding: 0; list-style: none; }}
   .talk-list li {{ margin-top: 1px; padding-top: 1px; border-top: 1px dotted rgba(23, 31, 32, 0.35); }}
   .talk-list li:first-child {{ border-top: 0; margin-top: 0; padding-top: 0; }}
-  .talk-presenter {{ font-size: 8px; font-weight: 400; line-height: 1.08; }}
-  .talk-title {{ font-size: 8px; font-weight: 700; line-height: 1.08; }}
+  .talk-presenter {{ font-size: 12px; font-weight: 400; line-height: 1.08; }}
+  .talk-title {{ font-size: 12px; font-weight: 700; line-height: 1.08; }}
   .row-event .event-col,
   .row-event .location-col,
   .row-keynote .event-col,
@@ -1771,6 +1747,189 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
     body {{ background: #d9d9d9; padding: 10px; }}
     .sheet {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
   }}
+  """
+
+
+# Physical usable height per fold-card panel: sheet min-height (194mm) minus the
+# sheet's own top+bottom padding (8mm x2), converted to CSS px at 96dpi. Panels
+# whose real rendered content exceeds this will not fit on one printed A4 sheet.
+FOLD_CARD_PANEL_BUDGET_PX = round((194 - 16) * 96 / 25.4)
+
+
+def measure_panel_height(rows_for_panel: list[dict]) -> int:
+    """Render a candidate panel's actual table markup in headless Chromium and
+    return its true content height in px — used by split_rows_by_fit() so panel
+    boundaries are chosen from real measurements, not an abstract weight guess."""
+    from playwright.sync_api import sync_playwright
+
+    html = f"""<!doctype html>
+<html><head><style>
+{base_css()}
+{fold_card_css()}
+</style></head>
+<body>
+<div class="panel" style="width: 128.5mm; display: inline-block;">
+  <table class="schedule-table">
+    <colgroup><col class="col-time"><col class="col-event"><col class="col-location"></colgroup>
+    <tbody>{render_schedule_rows(rows_for_panel, compact=True)}</tbody>
+  </table>
+</div>
+</body></html>"""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 700, "height": 3000})
+        page.set_content(html)
+        height = page.locator(".panel").first.evaluate("el => el.scrollHeight")
+        browser.close()
+    return height
+
+
+def split_rows_by_fit(rows: list[dict], parts: int, budget_px: int) -> list[list[dict]]:
+    """Pack rows into `parts` groups by actually rendering and measuring each
+    candidate panel, adding rows until the next one would overflow budget_px —
+    a real 'does it fit' check rather than the abstract weight heuristic in
+    split_rows_balanced(). Falls back to that heuristic for degenerate inputs."""
+    if parts <= 1 or not rows:
+        return split_rows_balanced(rows, parts)
+
+    from playwright.sync_api import sync_playwright
+
+    def panel_html(rows_for_panel: list[dict]) -> str:
+        return f"""<!doctype html>
+<html><head><style>
+{base_css()}
+{fold_card_css()}
+</style></head>
+<body>
+<div class="panel" style="width: 128.5mm; display: inline-block;">
+  <table class="schedule-table">
+    <colgroup><col class="col-time"><col class="col-event"><col class="col-location"></colgroup>
+    <tbody>{render_schedule_rows(rows_for_panel, compact=True)}</tbody>
+  </table>
+</div>
+</body></html>"""
+
+    groups: list[list[dict]] = []
+    remaining = list(rows)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 700, "height": 3000})
+
+        for panel_index in range(parts):
+            panels_left_after = parts - panel_index - 1
+
+            if panels_left_after == 0:
+                # Last panel: whatever's left, no further split point to find.
+                groups.append(remaining)
+                remaining = []
+                break
+
+            current: list[dict] = []
+            for row in list(remaining):
+                candidate = current + [row]
+                # Always leave at least one row per remaining panel.
+                if len(remaining) - len(candidate) < panels_left_after and current:
+                    break
+                page.set_content(panel_html(candidate))
+                height = page.locator(".panel").first.evaluate("el => el.scrollHeight")
+                if height > budget_px and current:
+                    break
+                current.append(row)
+
+            if not current and remaining:
+                # A single row already exceeds budget on its own — take it anyway;
+                # there's nothing smaller to split it into at this level.
+                current = [remaining[0]]
+
+            groups.append(current)
+            remaining = remaining[len(current):]
+
+        browser.close()
+
+    while len(groups) < parts:
+        groups.append([])
+
+    return groups
+
+
+def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[dict]) -> str:
+    _ = cards  # Kept for function signature compatibility.
+    rows = build_onepager_rows(programme)
+    quarters = split_rows_by_fit(rows, 4, FOLD_CARD_PANEL_BUDGET_PX)
+
+    # Imposition order for folding:
+    # Sheet 1 (outer): Q4 on left, Q1 on right
+    # Sheet 2 (inner): Q2 on left, Q3 on right
+    q1, q2, q3, q4 = quarters
+
+    def panel_html(rows_for_panel: list[dict], panel_title: str, show_primary_header: bool = False) -> str:
+        thead_html = """
+          <thead>
+            <tr>
+              <th scope=\"col\">Time</th>
+              <th scope=\"col\">Event</th>
+              <th scope=\"col\">Location</th>
+            </tr>
+          </thead>
+        """ if show_primary_header else ""
+
+        header_block = ""
+        if show_primary_header:
+            header_block = """
+          <header class=\"schedule-header\" role=\"banner\">
+            <div class=\"schedule-header-top\">
+              <img class=\"schedule-header-logo\" src=\"../assets/r_logo.png\" alt=\"Regent's University London logo\">
+              <h1>LTRS 2026</h1>
+            </div>
+            <p class=\"subtitle-line magnole\">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+            <p class=\"subtitle-line\">Learning, Teaching, Research and Scholarship Conference</p>
+            <p class=\"source-line\">September 10th, 2026</p>
+          </header>
+            """
+        else:
+            header_block = f"""
+          <header class=\"panel-header\">
+            <h2>{e(panel_title)}</h2>
+          </header>
+            """
+
+        return f"""
+        <section class=\"panel\">
+          {header_block}
+          <table class=\"schedule-table\" aria-label=\"{e(panel_title)}\">
+            <colgroup>
+              <col class=\"col-time\">
+              <col class=\"col-event\">
+              <col class=\"col-location\">
+            </colgroup>
+            {thead_html}
+            <tbody>
+              {render_schedule_rows(rows_for_panel, compact=True)}
+            </tbody>
+          </table>
+        </section>
+        """
+
+    outer_sheet = (
+        panel_html(q4, "Programme - Quarter 4")
+        + panel_html(q1, "Programme - Quarter 1", show_primary_header=True)
+    )
+    inner_sheet = (
+        panel_html(q2, "Programme - Quarter 2")
+        + panel_html(q3, "Programme - Quarter 3")
+    )
+
+    return f"""<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LTRS 2026 Schedule - A4 Fold Card</title>
+  <style>
+{base_css()}
+{fold_card_css()}
   </style>
 </head>
 <body>

@@ -21,10 +21,11 @@ Outputs produced by the pipeline:
 - `output/ltrs2026_a4_two_side.html` + `.pdf` — two-sided A4 duplex (front/back)
 - `output/ltrs2026_a4_fold_card.html` — landscape fold card (Q4|Q1 outer, Q2|Q3 inner)
 
-**Known issue (2026-08-05 evening session):** the fold card's Parallel Presentation Sessions
-panel is currently broken — unstyled/illegible, not just unpolished. See "Session Log (2026-08-05
-evening — two-pager polish + fold-card regression)" below for why, and don't patch it piecemeal;
-user wants a fresh rebuild of that panel specifically, planned as a separate future session.
+**Fold card rebuilt (2026-08-06 night session)** — the Parallel Presentation Sessions panel
+regression noted below (2026-08-05 evening) is fixed, and the four-quarter content split now
+uses real measured page-fit instead of a weight guess. See "Session Log (2026-08-06 night —
+fold-card rebuild)" below. Some tweaks were explicitly parked for a future session — don't
+assume it's fully finished, just no longer broken.
 
 Brand lockup assets `assets/cp_bt.png` (black text) and `assets/cp_gt.png` (green text) were added
 2026-08-06 for the page-footer branding — see "Session Log (2026-08-06 — branding footer, brand
@@ -369,6 +370,94 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-08-06 night — fold-card rebuild)
+Third session of the same day, tackling the fold card rebuild that had been explicitly deferred
+twice already (see the two session logs below). All changes in `render_ltrs2026_booklet.py`.
+
+- **Fixed the Parallel Presentation Sessions panel regression** flagged in the 2026-08-05 evening
+  session. Gave fold-card its own dedicated `render_track_stack()` renderer instead of sharing
+  `render_track_grid()` with the two-pager — deliberately *not* reusing that function, since
+  sharing it is exactly what caused the original regression (a two-pager markup change silently
+  broke fold-card's stale CSS). fold-card's panels are too narrow for three side-by-side columns
+  the way the two-pager does it (long talk titles would wrap into a very tall, narrow column), so
+  tracks stack one under another instead — each track its own bordered block (title + room on one
+  line, chair below with a divider, talks in a simple list) — matching the *original* pre-refactor
+  fold-card design intent, just rebuilt on top of the new data flow. Threaded a `compact: bool`
+  flag through `render_event_cell()`/`render_schedule_rows()` (default `False`, zero behaviour
+  change for single-page/two-side) so fold-card's own call site can opt into
+  `render_track_stack()` instead of `render_track_grid()`.
+
+- **Found and fixed a real bug in `split_rows_balanced()`** while investigating why Q4 (the back
+  cover) rendered completely empty. The function uses a fixed global `target = total_weight /
+  parts` to decide where to split, but once a heavy block (Parallel Presentation Sessions, weight
+  5) pushes a group over that target early, the *remaining* rows no longer contain enough total
+  weight to trigger another split under the same fixed target before the row loop runs out — so
+  the function silently produces fewer real groups than requested and pads the rest with `[]`.
+  Fixed by recomputing `target` from *remaining* weight ÷ *remaining* groups at each step (a
+  standard adaptive-target balancing fix) — confirmed by hand-tracing the exact 13-row dataset
+  before touching the code, then verifying the regenerated output matched the trace precisely.
+
+- **User pushback that mattered: "you're just shrinking the content."** First pass at "fix the
+  panel" kept the original 8-9px font sizes — technically correct now, but genuinely too small to
+  read comfortably (roughly 2-2.5mm cap height). User's reframing: the fold card uses the same
+  total paper as the two-pager (2 sheets of A4, just landscape and quartered instead of portrait
+  and halved), so content should redistribute to fit that space at a readable size, not shrink to
+  fit wherever the split happened to land. This was the right diagnosis and reframed the actual
+  task from "fix the CSS" to "fix the pagination."
+
+- **Bumped fold-card's detail text to genuinely readable sizes** (13px times/thead, 15px event
+  titles — Magnole, left untouched per user's explicit ask — 12px talk/track text, up from
+  8-9px), deliberately as a diagnostic step first ("show me how bad the overflow looks") before
+  building anything to fix it, rather than assuming.
+
+- **Discovered `.panel` had no enforced height at all** — `overflow: hidden` was set, but with no
+  explicit `height`, there was nothing for it to clip against; the panel (and the whole `.sheet`
+  grid row) just silently grows to fit content. The old weight-based split happened to keep
+  content small enough that this never became visible. Computed the real physical budget:
+  `FOLD_CARD_PANEL_BUDGET_PX = round((194 - 16) * 96 / 25.4)` ≈ 673px (sheet min-height minus its
+  own padding, converted to CSS px) — this is the number every subsequent fit check is measured
+  against.
+
+- **Caught my own measurement bug via user question, not luck.** First overflow readings (via
+  `panel.scrollHeight`) showed Q1 and Q3 exactly matching their overloaded sibling's height
+  pixel-for-pixel — which should have been an immediate red flag but initially wasn't caught.
+  When the user asked "is this doable?", re-checking the numbers before answering surfaced why:
+  `.panel` is a CSS Grid item, and grid items default to `align-items: stretch`, so the shorter
+  panel in each row was being measured *after* being stretched to match its taller sibling, not
+  at its own true content height. Re-measured with `align-items: start` forced via an injected
+  style tag to get real numbers — corrected picture was Q1=536px/Q3=267px (both with huge slack),
+  Q2=1129px (456px over budget), versus the initial wrongly-uniform reading. Worth remembering:
+  don't trust a "coincidentally identical" measurement between two elements that shouldn't be
+  identical — that's usually a sign the measurement itself is wrong, not the content.
+
+- **Built `split_rows_by_fit()`**: a real measure-and-pack splitter, replacing the weight-based
+  guess for fold-card specifically (`split_rows_balanced()` is kept as-is and still used as its
+  own fallback/degenerate-input case, and is untouched for its original purpose). Extracted the
+  fold-card CSS block out of `render_fold_card_a4_html()`'s inline f-string into its own
+  `fold_card_css()` function specifically so the *measurement* pass and the *real* render use
+  byte-identical styles — measuring against different CSS than what actually ships would make the
+  whole exercise pointless. The splitter launches one headless Chromium instance (via Playwright,
+  already a project dependency through `export_pdf.py`) and, for each of the first `parts - 1`
+  panels, greedily adds rows one at a time — rendering and checking `scrollHeight` via
+  `page.set_content()` reuse (not a fresh browser per candidate, for speed) — stopping as soon as
+  the next row would exceed `FOLD_CARD_PANEL_BUDGET_PX`, with a guard reserving at least one row
+  per remaining panel so an early panel can't greedily consume everything. The last panel always
+  gets whatever remains (no split point needed for it). Runtime cost: ~30-40 render/measure calls
+  for this 13-row schedule, well under a second in practice — the whole pipeline run stayed under
+  4 seconds end to end.
+  - Result, verified with the same unstretched-measurement technique: Q4=304px, Q1=570px,
+    Q2=513px, Q3=675px (2px over budget — ~0.5mm, print-invisible, not worth chasing further)
+    — down from the pre-fix reading of Q2 alone at 1129px (456px/68% over). All four panels now
+    carry genuinely readable, sensibly distributed content.
+  - User's own framing of the fix, worth keeping for next time this needs revisiting: "same
+    paper, rearranged" — the two-pager and fold-card use the same total physical paper (2 A4
+    sheets), so pagination should be solved as a real physical-fit problem, not an abstract
+    weight heuristic, whenever there's a hard page-size constraint like this one.
+
+- **Explicitly parked for a future session** (user's own words: "there are tweaks to do, but
+  let's park that for now") — not itemized in detail, just noted that this is a working, solid
+  state, not a finished/polished one. Don't assume fold-card needs nothing further.
 
 ## Session Log (2026-08-06 follow-up — border-width bug, pipeline reporting bug, full color centralization)
 Same evening, continued from the branding/border-color session below. All changes in
