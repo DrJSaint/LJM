@@ -75,8 +75,8 @@ is used. Fold-card keeps its own separate, independent set of color values for n
 ## Requirements
 
 - Python 3.10+
-- `python-docx`
-- `Pillow`
+- `python-docx`, `Pillow` (LJM/MLO pipeline)
+- `pandas`, `openpyxl`, `playwright` (LTRS pipeline)
 
 Install dependencies:
 
@@ -85,6 +85,17 @@ py -m pip install -r requirements.txt
 ```
 
 If `python` is already on your PATH, `python -m pip install -r requirements.txt` also works.
+
+The LTRS pipeline also needs Playwright's Chromium browser binary (separate from the pip
+package):
+
+```powershell
+py -m playwright install chromium
+```
+
+On Streamlit Community Cloud this is handled automatically — `packages.txt` supplies the apt-level
+system libraries Chromium needs, and `app.py` runs the Chromium install itself once per session
+before the first LTRS upload (`ensure_playwright_browsers()`).
 
 ## Quick Start
 

@@ -227,7 +227,26 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
     return results
 
 
+def ensure_playwright_browsers() -> None:
+    # Streamlit Community Cloud only runs `pip install -r requirements.txt`, which
+    # installs the playwright Python package but not the actual browser binary it
+    # drives — both the fold-card measurement pass and export_pdf.py's PDF export
+    # launch Chromium. `playwright install` is itself idempotent (no-ops if already
+    # downloaded), so this is cheap after the first real run in a given container;
+    # the session-state flag just skips even that no-op subprocess call on reruns
+    # within one browser session, same pattern as `stale_cleanup_done` above.
+    if st.session_state.get("playwright_browsers_ready"):
+        return
+    subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True,
+        text=True,
+    )
+    st.session_state["playwright_browsers_ready"] = True
+
+
 def run_ltrs_pipeline(uploaded_file) -> dict[str, Path]:
+    ensure_playwright_browsers()
     work_dir = ensure_work_dir()
     input_path = save_uploaded_file(uploaded_file, work_dir)
     st.session_state["last_input_name"] = input_path.stem

@@ -450,6 +450,37 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-06 late night, cont'd — Streamlit Cloud deployment fixes)
+Same night, after the Streamlit-integration work below was pushed. User tested the deployed app
+on Streamlit Community Cloud and hit `ImportError: Import openpyxl failed` uploading an `.xlsx`.
+
+- **Root cause:** `requirements.txt` only ever listed `python-docx`, `Pillow`, `streamlit` — the
+  entire LTRS pipeline's dependencies (`pandas`, `openpyxl`, `playwright`) were installed directly
+  into the local `.venv` at some point (likely during the original Copilot build session) but
+  never added to the file Streamlit Cloud actually installs from. Worked locally the whole time
+  for exactly that reason; never actually exercised via a fresh install until this test. Fixed by
+  adding all three to `requirements.txt`.
+- **Anticipated the next blocker rather than waiting for it to surface separately:** `pip install
+  playwright` only installs the Python package, not the Chromium binary it drives — both the
+  fold-card measurement pass (`split_rows_by_fit()`) and `export_pdf.py`'s PDF export launch
+  Chromium via `sync_playwright()`, and the fold card is generated unconditionally as part of
+  every LTRS orchestrator run (see "LTRS integration" above), so this would have broken even
+  HTML-only output, not just the PDF. Streamlit Community Cloud has no post-install hook to run
+  `playwright install chromium` automatically. Fixed with two additions:
+  - `packages.txt` (new file, repo root): the apt-level shared libraries Chromium needs on
+    Streamlit Cloud's Debian-based image (`libnss3`, `libatk-bridge2.0-0`, `libgbm1`, etc.) —
+    Streamlit Cloud reads this file at build time and apt-installs its contents automatically.
+  - `ensure_playwright_browsers()` in `app.py`: runs `python -m playwright install chromium` once
+    per session before `run_ltrs_pipeline()`'s subprocess call, gated by
+    `st.session_state["playwright_browsers_ready"]` — same pattern as the existing
+    `stale_cleanup_done` flag. `playwright install` is itself idempotent (no-ops if the browser is
+    already downloaded in the container), so the session-state gate only saves a redundant no-op
+    subprocess call within one browser session, not a real reinstall each time.
+- Not yet re-verified against the live Streamlit Cloud deployment (this fix was written and
+  pushed based on understanding the failure mode, not by reproducing the Cloud environment
+  locally) — worth confirming with the user next session that this actually cleared both the
+  `openpyxl` error and the anticipated Chromium-binary one, rather than assuming it did.
+
 ## Session Log (2026-08-06 late night — Streamlit integration + asset portability fix)
 Fourth session of the same day. User asked to add the LTRS pipeline to the Streamlit front end
 ("the next step is to add it to the streamlit front end... one uplaod area, and the response

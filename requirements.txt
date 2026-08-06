@@ -1,3 +1,6 @@
 python-docx
 Pillow
 streamlit
+pandas
+openpyxl
+playwright
