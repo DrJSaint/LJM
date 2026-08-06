@@ -227,10 +227,32 @@ py ".\python scripts\render_module_learning_outcomes_png.py" --input ".\output\s
 Run the web demo locally:
 
 ```powershell
-streamlit run .\app.py
+.\.venv\Scripts\python.exe -m streamlit run .\app.py
 ```
 
-The demo uploads a Word document, runs the existing pipeline, and always generates all assets together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. The review text is still generated and written to disk, but its download button is currently hidden (kept in the code, not deleted — re-enable it in `app.py` if you want it back). Downloads are offered individually — ZIP, PDF, MLO PNG, LJM PNG — plus a "Download all as ZIP" primary button. Uploading a different file (or removing the current one) clears any previous run's download buttons.
+The demo has a single upload widget that accepts either a `.docx` (LJM/MLO pipeline) or an
+`.xlsx` (LTRS schedule pipeline) and routes to the right pipeline based on the file extension —
+no separate mode switch to pick.
+
+**LJM/MLO mode** (`.docx` upload): runs the existing pipeline and always generates all assets
+together: a combined PDF (MLO page first, then LJM), both PNGs, and the review text. The review
+text is still generated and written to disk, but its download button is currently hidden (kept in
+the code, not deleted — re-enable it in `app.py` if you want it back). Downloads are offered
+individually — ZIP, PDF, MLO PNG, LJM PNG — plus a "Download all as ZIP" primary button.
+
+**LTRS mode** (`.xlsx` upload): runs the LTRS orchestrator (`make_ltrs2026_schedule.py`) and
+offers the two-side PDF, two-side HTML, and single-page HTML individually plus a "Download all as
+ZIP" button. The fold card is generated behind the scenes but not exposed here — it's deliberately
+excluded from the Streamlit flow for now. The sidebar's LJM-only controls (date picker, week
+count, layout mode) are hidden for this mode since they don't apply.
+
+Every generated LTRS HTML file is fully self-contained — fonts and images are embedded as base64
+data URIs rather than linked as relative paths — so moving, emailing, or downloading the file from
+Streamlit doesn't break its images or custom fonts (see CLAUDE.md's "asset embedding / portability
+fix" note for why that wasn't always true).
+
+Uploading a different file (or removing the current one) clears any previous run's download
+buttons.
 
 Each PNG's download button is followed by a suggested alt-text sentence (with a one-click copy icon) — paste it into Blackboard's own alt-text field when you embed the image there, since that's the only place alt text actually reaches a screen reader. It's a short summary by design, not a full transcript. The "Download all as ZIP" button also bundles a small `_alt_text.txt` file with both suggested sentences.
 

@@ -13,7 +13,9 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
@@ -21,6 +23,24 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT_JSON = PROJECT_ROOT / "output" / "ltrs2026_parsed.json"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 DEFAULT_BASE_NAME = "ltrs2026"
+
+_ASSET_MIME_TYPES = {
+    ".png": "image/png",
+    ".otf": "font/otf",
+    ".ttf": "font/ttf",
+}
+
+
+@lru_cache(maxsize=None)
+def asset_data_uri(filename: str) -> str:
+    # Embeds the asset directly in the HTML as a base64 data URI, so the file has
+    # no dependency on a sibling assets/ folder — it stays correct if the HTML is
+    # moved, emailed, or downloaded as a single file from the Streamlit app.
+    # lru_cache avoids re-reading/re-encoding the same font file for every call site.
+    path = PROJECT_ROOT / "assets" / filename
+    mime = _ASSET_MIME_TYPES.get(path.suffix.lower(), "application/octet-stream")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 CREAM = "#F7F1E8"
 DARK = "#171F20"
@@ -656,16 +676,16 @@ def base_css() -> str:
     return f"""
     @font-face {{
       font-family: "Magnole";
-      src: url("../assets/fonts/magnole-regular.otf") format("opentype");
+      src: url("{asset_data_uri('magnole-regular.otf')}") format("opentype");
     }}
     @font-face {{
       font-family: "AvenirLocal";
-      src: url("../assets/fonts/AvenirNextLTPro-Regular.otf") format("opentype");
+      src: url("{asset_data_uri('AvenirNextLTPro-Regular.otf')}") format("opentype");
       font-weight: 400;
     }}
     @font-face {{
       font-family: "AvenirLocal";
-      src: url("../assets/fonts/AvenirNextLTPro-Demi.otf") format("opentype");
+      src: url("{asset_data_uri('AvenirNextLTPro-Demi.otf')}") format("opentype");
       font-weight: 700;
     }}
 
@@ -1089,7 +1109,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   <main class="single-page">
     <header class="schedule-header" role="banner">
       <div class="schedule-header-top">
-        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
         <h1>LTRS 2026</h1>
       </div>
       <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
@@ -1117,7 +1137,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     </table>
 
     <footer class="page-footer">
-      <img src="../assets/{PAGE_FOOTER_LOGO}" alt="Regent's University London — Cultivating Possibility">
+      <img src="{asset_data_uri(PAGE_FOOTER_LOGO)}" alt="Regent's University London — Cultivating Possibility">
     </footer>
   </main>
 </body>
@@ -1468,7 +1488,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   <main class="a4-page">
     <header class="schedule-header" role="banner">
       <div class="schedule-header-top">
-        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
         <h1>LTRS 2026</h1>
       </div>
       <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
@@ -1498,7 +1518,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   <main class="a4-page continuation">
     <header class="schedule-header" role="banner">
       <div class="schedule-header-top">
-        <img class="schedule-header-logo" src="../assets/r_logo.png" alt="Regent's University London logo">
+        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
         <h1>LTRS 2026</h1>
       </div>
       <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
@@ -1524,7 +1544,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
       </tbody>
     </table>
     <footer class="page-footer">
-      <img src="../assets/{PAGE_FOOTER_LOGO}" alt="Regent's University London — Cultivating Possibility">
+      <img src="{asset_data_uri(PAGE_FOOTER_LOGO)}" alt="Regent's University London — Cultivating Possibility">
     </footer>
   </main>
 </body>
@@ -1877,10 +1897,10 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
 
         header_block = ""
         if show_primary_header:
-            header_block = """
+            header_block = f"""
           <header class=\"schedule-header\" role=\"banner\">
             <div class=\"schedule-header-top\">
-              <img class=\"schedule-header-logo\" src=\"../assets/r_logo.png\" alt=\"Regent's University London logo\">
+              <img class=\"schedule-header-logo\" src=\"{asset_data_uri('r_logo.png')}\" alt=\"Regent's University London logo\">
               <h1>LTRS 2026</h1>
             </div>
             <p class=\"subtitle-line magnole\">Care, Collaboration, and Community: Building Belonging in Higher Education</p>

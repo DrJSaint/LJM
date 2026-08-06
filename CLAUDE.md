@@ -31,6 +31,11 @@ Brand lockup assets `assets/cp_bt.png` (black text) and `assets/cp_gt.png` (gree
 2026-08-06 for the page-footer branding — see "Session Log (2026-08-06 — branding footer, brand
 green fix, uniform borders)" below.
 
+**LTRS is now wired into the Streamlit app** (2026-08-06 late night session) — the same upload
+widget accepts `.xlsx` and routes to this pipeline instead of the LJM one. See "Streamlit app"
+section 5 below and "Session Log (2026-08-06 late night — Streamlit integration + asset
+portability fix)".
+
 Run the LTRS pipeline from repo root:
 ```powershell
 .\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
@@ -116,7 +121,10 @@ during this session, based on user feedback that output looked soft when zoomed/
 
 ### 5) Streamlit app
 In `app.py`:
-- Upload one `.docx`
+- Upload one `.docx` (LJM/MLO pipeline) **or** one `.xlsx` (LTRS pipeline) — same uploader,
+  routed by file extension. See the dedicated LTRS-integration note near the end of this
+  section for how that branch works; everything else below describes the original LJM/MLO
+  path, unchanged by that addition.
 - Render target: `ljm | mlo | both`
 - Layout mode: `flex-height | standard | fit-fixed`
 - Sidebar has no top-level "Options" header (removed per user feedback — redundant once the
@@ -180,6 +188,73 @@ In `app.py`:
     Took three iterative rounds (padding alone, then padding+line-height, then font-size+tighter
     margins) — the first two looked like real fixes in isolated measurement but still read as
     "oversized" to the user until the line-height and inter-element gaps were both addressed.
+
+**LTRS integration (added 2026-08-06 late night session):**
+
+- Detection is by uploaded filename extension only (`uploaded_file.name.lower().endswith(".xlsx")`)
+  — no content sniffing, no user-facing mode switch. Computed once per rerun as `is_ltrs` right
+  after the (now type-agnostic) `st.file_uploader(..., type=["docx", "xlsx"])` call.
+- The uploader call was moved to *before* the `with st.sidebar:` block in the code (Streamlit
+  doesn't care about call order between sidebar and main-area — layout position is controlled by
+  the `st.sidebar` context manager, not code position) specifically so `is_ltrs` is known before
+  the sidebar renders, letting the LJM-only controls (Term Start Picker, LJM height options) be
+  wrapped in `if not is_ltrs: ... else: st.caption(...)` instead of showing irrelevant controls
+  for an Excel upload.
+- `run_ltrs_pipeline()` shells out to `make_ltrs2026_schedule.py` as a single subprocess (same
+  pattern as the existing `run_pipeline()` → `make_student_journey_map.py`), not to the three
+  underlying scripts individually — reuses the existing orchestrator rather than duplicating its
+  logic in `app.py`. The orchestrator still generates the fold card too (cheap, part of the same
+  run); `results` just never picks up that file, so it's never surfaced or zipped. If fold-card
+  ever needs exposing later, that's a one-line addition to the `results` dict, not a pipeline
+  change.
+- Button label and download section both branch on `is_ltrs` (stored as
+  `st.session_state["last_is_ltrs"]` at generation time, not recomputed from the *current*
+  uploader state on every rerun — same reasoning as `last_input_name` already being cached: a
+  download button click triggers a rerun, and the uploader could theoretically have changed by
+  then). Downloads: ZIP, Two-Side PDF, Two-Side HTML, Single-Page HTML — no fold-card, no
+  alt-text/JSON extras (those are LJM-specific concepts that don't apply here).
+- Verified end-to-end via a real Playwright browser session: uploaded the actual
+  `LTRS2026 schedule.xlsx`, generated, downloaded the ZIP, confirmed exactly the three expected
+  files with no fold-card, and additionally extracted the ZIP to a folder with no `assets/`
+  sibling anywhere nearby to confirm the downloaded HTML is genuinely self-contained (see the
+  asset-embedding note below — this only works *because* of that fix, landing in the same
+  session for exactly that reason).
+
+**Asset embedding / portability fix (same session, `render_ltrs2026_booklet.py`):** prompted by
+user noticing images go missing when an LTRS HTML file is moved to a different folder. Root
+cause was actually two separate things:
+
+1. Every `<img src="../assets/...">` and `@font-face src: url("../assets/...")` was a *relative*
+   path, which only resolves correctly if the HTML stays at `output/` with `assets/` as a sibling
+   directory — move the file anywhere else (email it, download it from Streamlit, drop it in a
+   different folder) and the path breaks.
+2. Found while fixing #1: the `@font-face` paths all pointed at `../assets/fonts/...`, but
+   `assets/fonts/` has never existed as a directory — every font file actually lives directly in
+   `assets/`. The Pillow-based LJM/MLO renderers have their own `find_font()` search list that
+   tries `assets/fonts/` *then* `assets/`, so they silently succeeded via the second path; the
+   LTRS pipeline's CSS had only the one (wrong) hardcoded path with no fallback. This means the
+   custom Magnole/Avenir Next fonts have likely never actually loaded in *any* LTRS HTML/PDF
+   output produced this session — every render was silently falling back to Georgia/Arial via the
+   CSS font-stack, and nobody (including this session, until now) noticed because the fallback
+   still looked like a reasonable serif/sans pairing.
+
+- Fix for both: new `asset_data_uri(filename)` helper (`functools.lru_cache`d — the same three
+  font files get requested many times across the three HTML outputs, no reason to re-read/re-encode
+  each one repeatedly) reads the file from the *correct* `assets/` location and returns a full
+  `data:{mime};base64,{...}` URI. Every `@font-face` and `<img src="...">` in `base_css()` and the
+  three `render_*_html()` functions now uses this instead of a relative path — genuinely fixes
+  both the wrong-path bug and the portability complaint in one change, since the embedded font is
+  necessarily read from the real file location.
+- One near-miss worth remembering: the fold card's own header block
+  (`panel_html()`'s `header_block` string) was a **plain triple-quoted string, not an f-string** —
+  the first pass at this edit inserted `{asset_data_uri(...)}` into it and it would have silently
+  rendered as literal broken text in the output rather than an image, with no Python error at all
+  (valid syntax, just not interpolated). Caught by grepping the generated HTML for literal
+  `asset_data_uri(` text after regenerating, rather than assuming the edit worked — worth doing
+  that grep again if any *other* string in this file gets a similar edit in the future.
+- HTML file size grew by roughly 250-300KB per output (3 embedded fonts ≈ 170KB raw / ~230KB
+  base64, plus one logo image) — confirmed acceptable, not worth optimizing further; a
+  fully self-contained single-file download matters more here than shaving 300KB.
 
 ### 6) Term dates and Easter break (added 2026-07-22 follow-up)
 `extract_student_journey_map_v2.py` no longer computes week dates as pure sequential
@@ -370,6 +445,79 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+4. Fold card has known further tweaks parked by the user ("there are tweaks to do, but let's park
+   that for now") — unspecified, don't start guessing at them unprompted.
+5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
+   this now") — don't add it without being asked.
+
+## Session Log (2026-08-06 late night — Streamlit integration + asset portability fix)
+Fourth session of the same day. User asked to add the LTRS pipeline to the Streamlit front end
+("the next step is to add it to the streamlit front end... one uplaod area, and the response
+depends on if it is a word doc or excel doc") after noticing a real problem while testing the
+fold-card output manually: moving an LTRS HTML file to a different folder breaks its images.
+Touched `app.py` and `render_ltrs2026_booklet.py`.
+
+- **Root-caused the portability complaint properly before touching code.** Every image/font in
+  the LTRS HTML output was a relative path (`../assets/...`), which only resolves if the HTML
+  stays next to its original `output/`/`assets/` folder pair — exactly what breaks when a file is
+  moved, emailed, or downloaded from Streamlit (a browser download has no sibling `assets/`
+  folder at all). While fixing this, found a second, previously invisible bug: the `@font-face`
+  rules pointed at `../assets/fonts/...`, but `assets/fonts/` has never existed as a directory —
+  every font file actually lives directly in `assets/`. The Pillow-based LJM/MLO renderers have
+  always had a `find_font()` fallback search list that tries `assets/fonts/` then `assets/`, so
+  they never surfaced this; the LTRS CSS had only the one wrong hardcoded path with no fallback.
+  Practical implication: the custom Magnole/Avenir Next fonts have likely never actually rendered
+  in any LTRS output — every render silently fell back to Georgia/Arial via the CSS font-stack,
+  unnoticed because the fallback still looked like a plausible serif/sans pairing.
+- **Fixed both with one change:** a new `asset_data_uri(filename)` helper in
+  `render_ltrs2026_booklet.py` (`functools.lru_cache`d, since the same three font files get
+  requested repeatedly across the three HTML outputs) reads a file from the correct `assets/`
+  location and returns a `data:{mime};base64,{...}` URI. Every `@font-face` and `<img src="...">`
+  across `base_css()` and all three `render_*_html()` functions (single-page, two-side ×2,
+  fold-card, plus both `PAGE_FOOTER_LOGO` footer occurrences — 6 image references total) now uses
+  this instead of a relative path, so every output HTML file is now fully self-contained with zero
+  external file dependencies.
+- **Caught a real near-miss while doing the conversion:** the fold card's own primary header
+  block was built from a plain triple-quoted string, not an f-string. The first pass at inserting
+  `{asset_data_uri(...)}` into it would have silently written that literal text into the output
+  HTML instead of an image — valid Python, no error, just a broken render. Caught by reading the
+  surrounding code before assuming the edit worked (not by running it and seeing a failure), fixed
+  by adding the `f` prefix, then double-checked globally by grepping all three generated HTML
+  outputs for the literal string `asset_data_uri(` — confirmed zero matches in all three, meaning
+  every occurrence was genuinely interpolated.
+- **Wired LTRS into `app.py`** as a second mode of the existing single-upload flow, exactly as the
+  user asked for ("Haha, so we could have one upload area, and the response depends on if it is a
+  word doc or excel doc. It is not scalable but I like it! Let's do it!"):
+  - `st.file_uploader(..., type=["docx", "xlsx"])` now accepts both; `is_ltrs` is computed from
+    the uploaded filename's extension right after upload, before the sidebar renders, so the
+    sidebar can conditionally hide the LJM-only controls (Term Start Picker, LJM height options)
+    behind `if not is_ltrs: ... else: st.caption("No extra options needed for LTRS schedules —
+    just upload and generate.")`.
+  - New `run_ltrs_pipeline()` shells out to the existing `make_ltrs2026_schedule.py` orchestrator
+    as one subprocess — same pattern as the existing `run_pipeline()` →
+    `make_student_journey_map.py` — rather than re-implementing the three-step pipeline inline.
+    The orchestrator still generates the fold card as part of that run (cheap, already happening),
+    but `results` never picks it up, so it's never surfaced in the UI or the ZIP — fold card stays
+    deliberately excluded per the user's explicit "leave the card fold out of this."
+  - New `build_ltrs_zip()` bundles the two-side PDF, two-side HTML, and single-page HTML.
+  - Button label (`"Generate Schedule"` vs `"Generate PDF and PNGs"`) and the downloads section
+    both branch on `is_ltrs`, cached at generation time as `st.session_state["last_is_ltrs"]`
+    (same reasoning as the pre-existing `last_input_name` caching — a download button click
+    triggers a rerun, and the uploader could have changed by then, so branch on what was actually
+    generated, not on the current uploader state).
+- **Verified thoroughly, not just by reading the code:**
+  - `ast.parse` syntax check on `app.py`.
+  - Full Playwright end-to-end run: uploaded the real `input/LTRS2026 schedule.xlsx`, confirmed
+    the sidebar caption, button label, and all four expected download buttons, downloaded the ZIP
+    and confirmed its exact contents (`LTRS2026 schedule_a4_two_side.pdf`,
+    `LTRS2026 schedule_a4_two_side.html`, `LTRS2026 schedule_single_page.html` — no fold card).
+  - True portability check: extracted the downloaded ZIP into an isolated folder with no
+    `assets/` directory anywhere nearby, opened the HTML directly, and confirmed via
+    `img.naturalWidth === 161` (not `0`) and `img.src.startsWith('data:') === true` that the logo
+    genuinely rendered from its embedded data URI rather than a broken relative link.
+- Output file size grew by roughly 250-300KB per HTML output (three embedded fonts plus one logo
+  image) — judged an acceptable tradeoff for zero external dependencies, not worth optimizing
+  further.
 
 ## Session Log (2026-08-06 night — fold-card rebuild)
 Third session of the same day, tackling the fold card rebuild that had been explicitly deferred

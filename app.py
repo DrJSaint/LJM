@@ -20,6 +20,7 @@ APP_SUBTITLE = "Upload your Learner Journey Map to generate student-facing PDFs 
 
 REPO_ROOT = Path(__file__).resolve().parent
 PIPELINE_SCRIPT = REPO_ROOT / "python scripts" / "make_student_journey_map.py"
+LTRS_PIPELINE_SCRIPT = REPO_ROOT / "python scripts" / "make_ltrs2026_schedule.py"
 
 WEEK_COUNT_OPTIONS = ["10 weeks", "12 weeks", "Custom"]
 WEEK_COUNT_VALUES = {"10 weeks": 10, "12 weeks": 12}
@@ -69,6 +70,7 @@ def init_state() -> None:
     st.session_state.setdefault("work_dir", None)
     st.session_state.setdefault("last_input_name", "ljm_output")
     st.session_state.setdefault("last_uploaded_file_id", None)
+    st.session_state.setdefault("last_is_ltrs", False)
 
     if not st.session_state.get("stale_cleanup_done"):
         cleanup_stale_work_dirs()
@@ -225,6 +227,54 @@ def run_pipeline(uploaded_file) -> dict[str, Path]:
     return results
 
 
+def run_ltrs_pipeline(uploaded_file) -> dict[str, Path]:
+    work_dir = ensure_work_dir()
+    input_path = save_uploaded_file(uploaded_file, work_dir)
+    st.session_state["last_input_name"] = input_path.stem
+    output_dir = work_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    base_name = input_path.stem
+    command = [
+        sys.executable,
+        str(LTRS_PIPELINE_SCRIPT),
+        "--input",
+        str(input_path),
+        "--output-dir",
+        str(output_dir),
+        "--base-name",
+        base_name,
+    ]
+    # Fold card is deliberately not surfaced in the app yet — the orchestrator
+    # still generates it (cheap, ~seconds), it's just not added to `results`.
+    completed = subprocess.run(command, capture_output=True, text=True)
+
+    st.session_state["last_message"] = completed.stdout + ("\n" + completed.stderr if completed.stderr else "")
+
+    if completed.returncode != 0:
+        stderr_lines = [line for line in completed.stderr.strip().splitlines() if line]
+        reason = stderr_lines[-1] if stderr_lines else ""
+        if reason.startswith("[FAIL] "):
+            reason = reason[len("[FAIL] "):]
+        if not reason:
+            reason = f"Something went wrong while generating the schedule (exit code {completed.returncode}). Please try again."
+        raise RuntimeError(reason)
+
+    results: dict[str, Path] = {}
+    single_html = output_dir / f"{base_name}_single_page.html"
+    two_side_html = output_dir / f"{base_name}_a4_two_side.html"
+    two_side_pdf = output_dir / f"{base_name}_a4_two_side.pdf"
+
+    if single_html.exists():
+        results["ltrs_single_html"] = single_html
+    if two_side_html.exists():
+        results["ltrs_two_side_html"] = two_side_html
+    if two_side_pdf.exists():
+        results["ltrs_two_side_pdf"] = two_side_pdf
+
+    return results
+
+
 def file_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
@@ -250,6 +300,20 @@ def build_zip(results: dict[str, Path], base_name: str, alt_text: dict[str, str]
                 lines += ["MLO card:", alt_text["mlo"], ""]
             archive.writestr(f"{base_name}_alt_text.txt", "\n".join(lines))
 
+    return buffer.getvalue()
+
+
+def build_ltrs_zip(results: dict[str, Path], base_name: str) -> bytes:
+    names = {
+        "ltrs_two_side_pdf": f"{base_name}_a4_two_side.pdf",
+        "ltrs_two_side_html": f"{base_name}_a4_two_side.html",
+        "ltrs_single_html": f"{base_name}_single_page.html",
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for key, filename in names.items():
+            if key in results:
+                archive.write(results[key], arcname=filename)
     return buffer.getvalue()
 
 
@@ -305,56 +369,11 @@ def main() -> None:
     st.title(APP_TITLE)
     st.subheader(APP_SUBTITLE)
 
-    with st.sidebar:
-        if False:
-            st.session_state["render_target"] = st.radio(
-                "Render target",
-                options=["ljm", "mlo", "both"],
-                index=["ljm", "mlo", "both"].index(st.session_state["render_target"]),
-                format_func=lambda value: {"ljm": "LJM", "mlo": "MLO", "both": "Both"}[value],
-            )
-        st.subheader("Term Start Picker")
-        st.session_state["week1"] = st.date_input("Term start (Week 1 Monday)", value=st.session_state["week1"])
-        snapped_monday = resolve_week1()
-        snapped_friday = snapped_monday + timedelta(days=4)
-        st.caption(f"Week 1 will run Mon {snapped_monday:%d %b %Y} – Fri {snapped_friday:%d %b %Y}.")
-
-        st.session_state["week_count_choice"] = st.radio(
-            "Number of teaching weeks",
-            options=WEEK_COUNT_OPTIONS,
-            index=WEEK_COUNT_OPTIONS.index(st.session_state["week_count_choice"]),
-            horizontal=True,
-        )
-        if st.session_state["week_count_choice"] == "Custom":
-            st.session_state["expected_weeks_custom"] = st.number_input(
-                "Custom week count",
-                min_value=1,
-                max_value=30,
-                value=int(st.session_state["expected_weeks_custom"]),
-            )
-        st.caption("A 2-week Easter break is inserted automatically if the term covers it.")
-
-        st.divider()
-
-        st.subheader("LJM height options")
-        st.session_state["layout_mode"] = st.radio(
-            "Layout mode",
-            options=["flex-height", "standard", "fit-fixed"],
-            index=["flex-height", "standard", "fit-fixed"].index(st.session_state["layout_mode"]),
-            format_func=lambda value: {"flex-height": "Flexi-height", "standard": "Fixed", "fit-fixed": "Fixed + fit"}[value],
-        )
-        # st.caption("PDF, PNGs, and the review text are all generated together.")
-
-        if False:
-            with st.expander("Advanced MLO controls", expanded=False):
-                st.session_state["mlo_header_size"] = st.number_input("Header size", min_value=20, max_value=120, value=int(st.session_state["mlo_header_size"]))
-                st.session_state["mlo_code_size"] = st.number_input("Code size", min_value=20, max_value=120, value=int(st.session_state["mlo_code_size"]))
-                st.session_state["mlo_title_size"] = st.number_input("Title size", min_value=20, max_value=120, value=int(st.session_state["mlo_title_size"]))
-                st.session_state["mlo_desc_size"] = st.number_input("Description size", min_value=20, max_value=120, value=int(st.session_state["mlo_desc_size"]))
-                st.session_state["mlo_line_spacing"] = st.number_input("Description line spacing", min_value=0, max_value=30, value=int(st.session_state["mlo_line_spacing"]))
-                st.session_state["mlo_header_line_gap"] = st.number_input("Header line gap", min_value=0, max_value=30, value=int(st.session_state["mlo_header_line_gap"]))
-
-    uploaded_file = st.file_uploader("Drag and drop your Learner Journey Map here, or click Upload to browse.", type=["docx"])
+    uploaded_file = st.file_uploader(
+        "Drag and drop your Learner Journey Map (.docx) or LTRS schedule (.xlsx) here, or click Upload to browse.",
+        type=["docx", "xlsx"],
+    )
+    is_ltrs = uploaded_file is not None and uploaded_file.name.lower().endswith(".xlsx")
 
     current_file_id = uploaded_file.file_id if uploaded_file is not None else None
     if current_file_id != st.session_state["last_uploaded_file_id"]:
@@ -363,9 +382,62 @@ def main() -> None:
         st.session_state["last_alt_text"] = {}
         st.session_state["last_uploaded_file_id"] = current_file_id
 
+    with st.sidebar:
+        if is_ltrs:
+            st.caption("No extra options needed for LTRS schedules — just upload and generate.")
+        else:
+            if False:
+                st.session_state["render_target"] = st.radio(
+                    "Render target",
+                    options=["ljm", "mlo", "both"],
+                    index=["ljm", "mlo", "both"].index(st.session_state["render_target"]),
+                    format_func=lambda value: {"ljm": "LJM", "mlo": "MLO", "both": "Both"}[value],
+                )
+            st.subheader("Term Start Picker")
+            st.session_state["week1"] = st.date_input("Term start (Week 1 Monday)", value=st.session_state["week1"])
+            snapped_monday = resolve_week1()
+            snapped_friday = snapped_monday + timedelta(days=4)
+            st.caption(f"Week 1 will run Mon {snapped_monday:%d %b %Y} – Fri {snapped_friday:%d %b %Y}.")
+
+            st.session_state["week_count_choice"] = st.radio(
+                "Number of teaching weeks",
+                options=WEEK_COUNT_OPTIONS,
+                index=WEEK_COUNT_OPTIONS.index(st.session_state["week_count_choice"]),
+                horizontal=True,
+            )
+            if st.session_state["week_count_choice"] == "Custom":
+                st.session_state["expected_weeks_custom"] = st.number_input(
+                    "Custom week count",
+                    min_value=1,
+                    max_value=30,
+                    value=int(st.session_state["expected_weeks_custom"]),
+                )
+            st.caption("A 2-week Easter break is inserted automatically if the term covers it.")
+
+            st.divider()
+
+            st.subheader("LJM height options")
+            st.session_state["layout_mode"] = st.radio(
+                "Layout mode",
+                options=["flex-height", "standard", "fit-fixed"],
+                index=["flex-height", "standard", "fit-fixed"].index(st.session_state["layout_mode"]),
+                format_func=lambda value: {"flex-height": "Flexi-height", "standard": "Fixed", "fit-fixed": "Fixed + fit"}[value],
+            )
+            # st.caption("PDF, PNGs, and the review text are all generated together.")
+
+            if False:
+                with st.expander("Advanced MLO controls", expanded=False):
+                    st.session_state["mlo_header_size"] = st.number_input("Header size", min_value=20, max_value=120, value=int(st.session_state["mlo_header_size"]))
+                    st.session_state["mlo_code_size"] = st.number_input("Code size", min_value=20, max_value=120, value=int(st.session_state["mlo_code_size"]))
+                    st.session_state["mlo_title_size"] = st.number_input("Title size", min_value=20, max_value=120, value=int(st.session_state["mlo_title_size"]))
+                    st.session_state["mlo_desc_size"] = st.number_input("Description size", min_value=20, max_value=120, value=int(st.session_state["mlo_desc_size"]))
+                    st.session_state["mlo_line_spacing"] = st.number_input("Description line spacing", min_value=0, max_value=30, value=int(st.session_state["mlo_line_spacing"]))
+                    st.session_state["mlo_header_line_gap"] = st.number_input("Header line gap", min_value=0, max_value=30, value=int(st.session_state["mlo_header_line_gap"]))
+
     col1, col2 = st.columns([1, 1])
     with col1:
-        generate = st.button("Generate PDF and PNGs", type="primary", disabled=uploaded_file is None)
+        button_label = "Generate Schedule" if is_ltrs else "Generate PDF and PNGs"
+        generate = st.button(button_label, type="primary", disabled=uploaded_file is None)
     with col2:
         if False:
             if st.button("Reset workspace"):
@@ -380,8 +452,12 @@ def main() -> None:
     if generate and uploaded_file is not None:
         with st.spinner("Running the renderer..."):
             try:
-                results = run_pipeline(uploaded_file)
+                if is_ltrs:
+                    results = run_ltrs_pipeline(uploaded_file)
+                else:
+                    results = run_pipeline(uploaded_file)
                 st.session_state["last_results"] = results
+                st.session_state["last_is_ltrs"] = is_ltrs
                 st.success("Rendering complete.")
             except Exception as exc:
                 st.session_state["last_results"] = None
@@ -393,7 +469,45 @@ def main() -> None:
                 st.text(st.session_state["last_message"])
 
     results = st.session_state.get("last_results") or {}
-    if results:
+    was_ltrs = st.session_state.get("last_is_ltrs", False)
+
+    if results and was_ltrs:
+        st.subheader("Downloads")
+        base_name = st.session_state.get("last_input_name", "ltrs_schedule")
+
+        st.download_button(
+            "Download all as ZIP",
+            data=build_ltrs_zip(results, base_name),
+            file_name=f"{base_name}_ltrs_assets.zip",
+            mime="application/zip",
+            type="primary",
+        )
+
+        if "ltrs_two_side_pdf" in results:
+            st.download_button(
+                "Download Two-Side PDF",
+                data=file_bytes(results["ltrs_two_side_pdf"]),
+                file_name=f"{base_name}_a4_two_side.pdf",
+                mime="application/pdf",
+            )
+
+        if "ltrs_two_side_html" in results:
+            st.download_button(
+                "Download Two-Side HTML",
+                data=file_bytes(results["ltrs_two_side_html"]),
+                file_name=f"{base_name}_a4_two_side.html",
+                mime="text/html",
+            )
+
+        if "ltrs_single_html" in results:
+            st.download_button(
+                "Download Single-Page HTML",
+                data=file_bytes(results["ltrs_single_html"]),
+                file_name=f"{base_name}_single_page.html",
+                mime="text/html",
+            )
+
+    elif results:
         st.subheader("Downloads")
         base_name = st.session_state.get("last_input_name", "ljm_output")
         alt_text = st.session_state.get("last_alt_text") or {}
