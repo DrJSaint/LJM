@@ -29,6 +29,15 @@ Outputs written to `output/`:
 
 **Known issue:** the fold card's Parallel Presentation Sessions panel is currently unstyled/illegible (not just unpolished) — see CLAUDE.md's "two-pager polish + fold-card regression" session log for the root cause. Needs a rebuild; don't rely on the fold-card output for that section until it's fixed. The single-page and two-side outputs are unaffected.
 
+### Quick style toggles
+
+Near the top of `render_ltrs2026_booklet.py`, alongside the brand palette constants:
+
+- `PAGE_FOOTER_LOGO` — which brand lockup (`assets/cp_gt.png` green text or `assets/cp_bt.png` black text) appears in the page footer on single-page and two-side.
+- `SCHEDULE_HEADER_RADIUS` — `"0"` for the current square-cornered banner, or `"6px"` to restore the original rounded corners.
+
+Change the value and rerun the pipeline; no other edits needed.
+
 ### PDF printing tips
 
 - Enable **Background graphics** in the print dialog (or use the pipeline's built-in Playwright export).

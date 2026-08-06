@@ -29,6 +29,10 @@ BLUE = "#70ACE9"
 LILAC = "#D8CBF1"
 MAROON = "#710704"
 
+# Quick single-page/two-side toggles — change the value, regenerate, done.
+PAGE_FOOTER_LOGO = "cp_gt.png"  # or "cp_bt.png" for the black-text variant
+SCHEDULE_HEADER_RADIUS = "0"  # square corners; was "6px" for the original rounded banner
+
 
 def e(value: object) -> str:
     if value is None:
@@ -738,9 +742,9 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .schedule-header {{
     background: var(--green);
     color: var(--cream);
-    border-radius: 6px;
+    border-radius: {SCHEDULE_HEADER_RADIUS};
     padding: 8px 10px;
-    margin-bottom: 8px;
+    margin-bottom: 20px;
     text-align: center;
   }}
   .schedule-header-top {{
@@ -798,13 +802,13 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     background: #fff;
   }}
   .col-time {{ width: 5.2em; }}
   .col-location {{ width: 7.6em; }}
   .schedule-table thead th {{
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 4px 6px;
     font-size: 11px;
     font-weight: 700;
@@ -812,28 +816,28 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     text-transform: uppercase;
     text-align: left;
     color: var(--cream);
-    background: #216d5c;
+    background: var(--green);
   }}
   .time-col {{
-    background: #216d5c;
+    background: var(--green);
     color: var(--cream);
     font-size: 13px;
     font-weight: 700;
     line-height: 1.05;
     padding: 4px 5px;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     text-align: left;
     vertical-align: top;
   }}
   .event-col {{
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 3px 6px;
     vertical-align: top;
     background: var(--cream);
   }}
   .location-col {{
     width: 18%;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 4px 5px;
     vertical-align: top;
     text-align: left;
@@ -864,7 +868,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     margin-right: -6px;
     padding-left: 6px;
     padding-right: 6px;
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    border-bottom: 1px solid #999994;
     padding-bottom: 2px;
     margin-bottom: 2px;
   }}
@@ -899,17 +903,17 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .track-cell {{
     display: table-cell;
     vertical-align: top;
-    border-left: 1px solid rgba(23, 31, 32, 0.22);
-    border-right: 1px solid rgba(23, 31, 32, 0.22);
+    border-left: 1px solid #999994;
+    border-right: 1px solid #999994;
     background: #f8f5ec;
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
-    border-top: 1px solid rgba(23, 31, 32, 0.22);
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    border-top: 1px solid #999994;
+    border-bottom: 1px solid #999994;
   }}
   .track-row:last-child .track-cell {{
-    border-bottom: 1px solid rgba(23, 31, 32, 0.22);
+    border-bottom: 1px solid #999994;
   }}
   .row-parallel_sessions .track-cell,
   .row-parallel_workshops .track-cell {{
@@ -937,7 +941,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     margin-top: 3px;
   }}
   .talk-body {{
-    border-top: 1px solid rgba(23, 31, 32, 0.16);
+    border-top: 1px solid #999994;
   }}
   .track-row-header + .track-row .talk-body {{
     border-top: 0;
@@ -950,7 +954,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid rgba(23, 31, 32, 0.16);
+    border-top: 1px solid #999994;
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -993,19 +997,14 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .row-parallel_sessions .location-col {{
     background: var(--row-presentations);
   }}
-  .footer-line {{
-    margin-top: 8px;
+  .page-footer {{
+    margin-top: 20px;
     text-align: center;
-    font-family: "Magnole", Georgia, serif;
-    color: var(--green);
-    font-size: 24px;
-    line-height: 1.0;
   }}
-  .footer-sub {{
-    text-align: center;
-    margin-top: 1px;
-    font-size: 13px;
-    color: var(--dark);
+  .page-footer img {{
+    width: 200px;
+    height: auto;
+    display: inline-block;
   }}
   @media screen and (max-width: 900px) {{
     .single-page {{ width: auto; min-height: auto; padding: 10px; }}
@@ -1068,8 +1067,9 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
       </tbody>
     </table>
 
-    <div class="footer-line">Cultivating Possibility</div>
-    <div class="footer-sub">Regent's University London</div>
+    <footer class="page-footer">
+      <img src="../assets/{PAGE_FOOTER_LOGO}" alt="Regent's University London — Cultivating Possibility">
+    </footer>
   </main>
 </body>
 </html>
@@ -1098,14 +1098,26 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     margin: 0 auto;
     page-break-after: always;
     background: var(--cream);
+    display: flex;
+    flex-direction: column;
   }}
   .a4-page:last-child {{ page-break-after: auto; }}
+  .page-footer {{
+    margin-top: auto;
+    margin-bottom: auto;
+    text-align: center;
+  }}
+  .page-footer img {{
+    width: 260px;
+    height: auto;
+    display: inline-block;
+  }}
   .schedule-header {{
     background: var(--green);
     color: var(--cream);
-    border-radius: 6px;
+    border-radius: {SCHEDULE_HEADER_RADIUS};
     padding: 8px 10px;
-    margin-bottom: 8px;
+    margin-bottom: 20px;
     text-align: center;
   }}
   .schedule-header-top {{
@@ -1155,13 +1167,13 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     background: #fff;
   }}
   .col-time {{ width: 5.2em; }}
   .col-location {{ width: 7.6em; }}
   .schedule-table thead th {{
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 4px 6px;
     font-size: 11px;
     font-weight: 700;
@@ -1169,7 +1181,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     text-transform: uppercase;
     text-align: left;
     color: var(--cream);
-    background: #216d5c;
+    background: var(--green);
   }}
   .sr-only {{
     position: absolute;
@@ -1183,25 +1195,25 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     border: 0;
   }}
   .time-col {{
-    background: #216d5c;
+    background: var(--green);
     color: var(--cream);
     font-size: 13px;
     font-weight: 700;
     line-height: 1.05;
     padding: 4px 5px;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     text-align: left;
     vertical-align: top;
   }}
   .event-col {{
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 3px 6px;
     vertical-align: top;
     background: var(--cream);
   }}
   .location-col {{
     width: 18%;
-    border: 1px solid rgba(23, 31, 32, 0.42);
+    border: 1px solid #999994;
     padding: 4px 5px;
     vertical-align: top;
     text-align: left;
@@ -1232,7 +1244,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     margin-right: -6px;
     padding-left: 6px;
     padding-right: 6px;
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    border-bottom: 1px solid #999994;
     padding-bottom: 2px;
     margin-bottom: 2px;
   }}
@@ -1267,17 +1279,17 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .track-cell {{
     display: table-cell;
     vertical-align: top;
-    border-left: 1px solid rgba(23, 31, 32, 0.22);
-    border-right: 1px solid rgba(23, 31, 32, 0.22);
+    border-left: 1px solid #999994;
+    border-right: 1px solid #999994;
     background: #f8f5ec;
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
-    border-top: 1px solid rgba(23, 31, 32, 0.22);
-    border-bottom: 1px solid rgba(23, 31, 32, 0.52);
+    border-top: 1px solid #999994;
+    border-bottom: 1px solid #999994;
   }}
   .track-row:last-child .track-cell {{
-    border-bottom: 1px solid rgba(23, 31, 32, 0.22);
+    border-bottom: 1px solid #999994;
   }}
   .row-parallel_sessions .track-cell,
   .row-parallel_workshops .track-cell {{
@@ -1305,7 +1317,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     margin-top: 3px;
   }}
   .talk-body {{
-    border-top: 1px solid rgba(23, 31, 32, 0.16);
+    border-top: 1px solid #999994;
   }}
   .track-row-header + .track-row .talk-body {{
     border-top: 0;
@@ -1318,7 +1330,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   .talk-list li {{
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid rgba(23, 31, 32, 0.16);
+    border-top: 1px solid #999994;
   }}
   .talk-list li:first-child {{
     border-top: 0;
@@ -1371,7 +1383,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
       color: var(--cream) !important;
     }}
     .time-col {{
-      background: #216d5c !important;
+      background: var(--green) !important;
       color: var(--cream) !important;
     }}
     .row-event .event-col,
@@ -1462,6 +1474,9 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
         {back_rows_html}
       </tbody>
     </table>
+    <footer class="page-footer">
+      <img src="../assets/{PAGE_FOOTER_LOGO}" alt="Regent's University London — Cultivating Possibility">
+    </footer>
   </main>
 </body>
 </html>
@@ -1636,10 +1651,10 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
     text-transform: uppercase;
     text-align: left;
     color: var(--cream);
-    background: #216d5c;
+    background: var(--green);
   }}
   .time-col {{
-    background: #216d5c;
+    background: var(--green);
     color: var(--cream);
     font-size: 9px;
     font-weight: 700;
@@ -1731,7 +1746,7 @@ def render_fold_card_a4_html(parsed: dict, programme: list[dict], cards: list[di
     .schedule-header h1,
     .schedule-header .subtitle-line,
     .schedule-header .source-line {{ color: var(--cream) !important; }}
-    .time-col {{ background: #216d5c !important; color: var(--cream) !important; }}
+    .time-col {{ background: var(--green) !important; color: var(--cream) !important; }}
     .row-event .event-col,
     .row-event .location-col,
     .row-keynote .event-col,

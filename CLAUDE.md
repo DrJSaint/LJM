@@ -26,6 +26,10 @@ panel is currently broken — unstyled/illegible, not just unpolished. See "Sess
 evening — two-pager polish + fold-card regression)" below for why, and don't patch it piecemeal;
 user wants a fresh rebuild of that panel specifically, planned as a separate future session.
 
+Brand lockup assets `assets/cp_bt.png` (black text) and `assets/cp_gt.png` (green text) were added
+2026-08-06 for the page-footer branding — see "Session Log (2026-08-06 — branding footer, brand
+green fix, uniform borders)" below.
+
 Run the LTRS pipeline from repo root:
 ```powershell
 .\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
@@ -365,6 +369,88 @@ If Streamlit is missing in venv:
 2. If asked about vector output: this was discussed and explicitly deferred — don't start it
    unprompted.
 3. Keep UI minimal unless user asks for targeted styling only.
+
+## Session Log (2026-08-06 — branding footer, brand green fix, uniform borders)
+Follow-up to the previous evening's two-pager polish session, same scope discipline: everything
+below touches `render_ltrs2026_booklet.py` only, and only the single-page/two-side code paths —
+fold-card's separate CSS block was deliberately left alone again, still pending its own rebuild
+(see the "Known issue" note above the LTRS scripts list).
+
+- **Page-footer branding added to both single-page and two-side.** User provided two brand
+  lockup variants — `assets/cp_bt.png` (black text) and `assets/cp_gt.png` (green text), both
+  the full "REGENT'S UNIVERSITY LONDON / CULTIVATING POSSIBILITY" wordmark, distinct from the
+  small rosette-only `r_logo.png` already used in the page header. User asked to literally try
+  one, look at it, then try the other, rather than have both rendered side-by-side for
+  comparison — so the whole exercise was done via a single `PAGE_FOOTER_LOGO` module-level
+  constant (grouped with the palette constants near the top of the file) that gets toggled and
+  the pipeline rerun each time, not a one-off comparison harness.
+  - Two-side page 2 previously ended with dead blank space below the table; `.a4-page` was
+    changed to `display: flex; flex-direction: column` so a `<footer class="page-footer">`
+    (holding just the logo `<img>`) can use `margin-top: auto` to sit flush at the page bottom.
+    First pass looked too small and too close to the very bottom edge — user wanted it bigger
+    and more centered in the blank space, not pinned to the edge. Fixed by widening the image
+    (150px → 260px) and adding `margin-bottom: auto` alongside the existing `margin-top: auto`,
+    which centers the footer in whatever space is left after the header+table rather than
+    pushing it to the bottom — a pure CSS flex trick, no JS/measurement needed.
+  - Single-page had its own separate, older footer — plain text "Cultivating Possibility" /
+    "Regent's University London" in Magnole serif (`.footer-line`/`.footer-sub` classes, no
+    image). User asked to replace that with the same logo treatment for consistency. Single-page
+    isn't a fixed-height flex page like two-side (`.single-page` is a plain block container that
+    just grows with content), so its footer doesn't need the flex-centering trick — it simply
+    sits in normal document flow right after the table, sized slightly smaller (200px) since
+    there's no blank space to visually balance against. `.footer-line`/`.footer-sub` CSS and
+    both call sites were removed outright (confirmed via grep they had no other callers), not
+    left as dead code.
+
+- **Fixed a real hardcoded-color bug: `#216d5c` vs the actual brand green `#195C4D`.** User
+  zoomed into the table header and asked "what's our official brand green" — turned out the
+  schedule table's header row background and the Time column background were using a
+  *different*, separately hardcoded green (`#216d5c`) that had never been tied to the `GREEN`
+  constant / `var(--green)` used everywhere else (the schedule-header banner, track headers,
+  etc.). Replaced all 8 occurrences — across single-page, two-side, *and* fold-card, since this
+  one was a correctness fix worth making everywhere regardless of fold-card's pending rebuild,
+  not a design choice specific to the two-pager — with `var(--green)`, so there's now exactly
+  one place (`GREEN = "#195C4D"` at the top of the file) that defines the brand green.
+
+- **Unified all border colors/weights to one solid, understated grey.** User zoomed into the
+  table and asked to review line colors/weighting/alpha "throughout" — the grid lines looked
+  inconsistent (near-black over cream rows, nearly invisible over the dark green header/Time
+  column). Investigated properly before touching anything: pulled live computed styles via
+  Playwright and confirmed every border declaration was already textually identical
+  (`rgba(23, 31, 32, 0.42)`, 1px) — so it wasn't a CSS mismatch, it was the nature of a
+  *semi-transparent* border compositing differently depending on what's behind it. Also surveyed
+  the full alpha hierarchy in use (0.42 main grid, 0.52 track-header divider, 0.22 track-cell
+  box, 0.16 talk-to-talk divider) and flagged that 0.52 was technically *stronger* than the
+  0.42 main grid — a sub-component's internal line outweighing the page's own top-level
+  structure, inherited from the original pre-refactor design, not something introduced this
+  week. User's call: uniform and understated, i.e. collapse all four tiers into one solid color.
+  Computed what `rgba(23, 31, 32, 0.42)` already looks like composited over the cream background
+  (`(23×0.42 + 247×0.58, 31×0.42 + 241×0.58, 32×0.42 + 232×0.58)` ≈ `#999994`) and used that
+  exact value as a single opaque replacement everywhere in single-page/two-side (26 occurrences,
+  via a line-range-scoped `sed` rather than `replace_all`, specifically to avoid touching
+  fold-card's own separate border declarations, several of which happen to share the same 0.42
+  value by coincidence). Picking the "already how it looks over cream" value meant the light
+  rows are visually unchanged; only the dark-green areas' lines became visible/consistent rather
+  than nearly disappearing.
+
+- **More breathing room between the green header banner and the table.** User's own aesthetic
+  call (asked for an opinion first, then asked for the change): `.schedule-header`'s
+  `margin-bottom` went from 8px to 20px in single-page and two-side, so the banner and the
+  table's own (same-colored) header row read as two distinct elements instead of one merged
+  green block. Confirmed the two-side page 2 footer (see above, centered via `margin-top: auto`
+  / `margin-bottom: auto`) re-centered itself correctly in the now-slightly-smaller remaining
+  space with no extra work — that's the point of using auto-margins for centering instead of a
+  fixed offset.
+
+- **Squared off the header banner's corners**, user's own suggestion after speculating about two
+  options (round the table's corners to match the banner, vs. square the banner to match the
+  table) and asking for a recommendation. Recommended squaring — cheaper, zero risk to the
+  border-collapse mechanics the uniform-border fix above depends on, and rounding a real
+  `<table>` with collapsed borders is a known CSS pain point (needs `border-collapse: separate`
+  plus per-corner-cell radii, which would also risk reintroducing the border inconsistency just
+  fixed). Implemented as a `SCHEDULE_HEADER_RADIUS = "0"` toggle constant (comment notes the
+  original was `"6px"`) rather than deleting the rounded-corner value outright, per user's
+  explicit ask to keep it easily reversible — same pattern as `PAGE_FOOTER_LOGO`.
 
 ## Session Log (2026-08-05 evening — two-pager polish + fold-card regression)
 User had exhausted their GitHub Copilot credits for the day and switched to Claude Code
