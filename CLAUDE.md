@@ -476,10 +476,12 @@ on Streamlit Community Cloud and hit `ImportError: Import openpyxl failed` uploa
     `stale_cleanup_done` flag. `playwright install` is itself idempotent (no-ops if the browser is
     already downloaded in the container), so the session-state gate only saves a redundant no-op
     subprocess call within one browser session, not a real reinstall each time.
-- Not yet re-verified against the live Streamlit Cloud deployment (this fix was written and
-  pushed based on understanding the failure mode, not by reproducing the Cloud environment
-  locally) — worth confirming with the user next session that this actually cleared both the
-  `openpyxl` error and the anticipated Chromium-binary one, rather than assuming it did.
+- **Confirmed working by the user against the live deployment** the same night: the `openpyxl`
+  error is gone and the anticipated Chromium-binary issue was indeed the next thing hit, cleared
+  automatically by `ensure_playwright_browsers()` — user noted a short delay on first LTRS
+  generation per (re)deployed container while Chromium downloads, then normal speed after. That
+  one-time delay is expected and not a bug — see `ensure_playwright_browsers()`'s own comment for
+  why the session-state gate doesn't (and can't) eliminate it, only avoid repeating it needlessly.
 
 ## Session Log (2026-08-06 late night — Streamlit integration + asset portability fix)
 Fourth session of the same day. User asked to add the LTRS pipeline to the Streamlit front end
