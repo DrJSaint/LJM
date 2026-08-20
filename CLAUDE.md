@@ -450,6 +450,36 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20 — printed two-pager: white PDF border, presenter text size)
+User printed the two-side PDF for the first time and flagged two things from the physical
+printout, both in `render_ltrs2026_booklet.py` (two-side and single-page CSS; fold-card untouched
+— it already had the correct pattern, see below):
+
+- **Presenter/detail text bumped from 11px to 12px**, to match `.location-col`'s 12px — user felt
+  "Professor Fary Cachelin"-style detail lines under each event title read too small next to the
+  location column beside them. Applied to both single-page and two-side (`.detail-lines`), left
+  `.event-note`/`.chair-note` (the italic "Chaired by:" line) alone since that wasn't what was
+  flagged.
+- **Fixed a real double-margin bug causing a white border on the exported PDF only** (not the
+  HTML view — `@page` CSS rules only apply to print/PDF rendering, which is exactly why the user
+  saw it in the printed PDF but not when just opening the HTML file). Root cause: `.a4-page` /
+  `.single-page` are already sized to the *full* physical A4 sheet (`210mm × 297mm`) with their
+  own `padding: 8mm` providing the inset — but the accompanying `@page { margin: 8mm }` rule adds
+  a *second*, independent 8mm margin on top when Chromium's `page.pdf()` honours it (triggered by
+  `export_pdf.py`'s `prefer_css_page_size=True`), shrinking the printable area and letterboxing
+  the whole already-inset page inside it. Fixed by setting both `@page` rules' `margin` to `0`,
+  leaving `.a4-page`/`.single-page`'s own padding as the sole source of inset — matches how the
+  fold card already does it correctly (`.sheet` is pre-shrunk to `281mm` — the landscape page
+  width already minus its own 8mm-each-side margin — rather than full page + padding), which is
+  why fold-card never had this bug and needed no change here. Single-page's PDF export is still
+  disabled in the pipeline, so this was a latent identical bug there too, fixed for consistency
+  even though it wasn't yet visibly hit.
+- Verified by regenerating the pipeline and rendering the actual exported PDF's first page to a
+  PNG (`pypdfium2`, one-off local verification tool, not added to `requirements.txt` since the
+  pipeline itself never needs to rasterize a PDF) rather than trusting the CSS reasoning alone —
+  confirmed the cream page now fills to the sheet edge with no white margin, and the presenter
+  text visibly matches the location column's size.
+
 ## Session Log (2026-08-06 late night, cont'd — Streamlit Cloud deployment fixes)
 Same night, after the Streamlit-integration work below was pushed. User tested the deployed app
 on Streamlit Community Cloud and hit `ImportError: Import openpyxl failed` uploading an `.xlsx`.

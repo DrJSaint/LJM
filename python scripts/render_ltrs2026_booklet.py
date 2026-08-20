@@ -800,7 +800,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   <title>LTRS 2026 Schedule - Single Page</title>
   <style>
 {base_css()}
-  @page {{ size: A4 portrait; margin: 8mm; }}
+  @page {{ size: A4 portrait; margin: 0; }}
   .single-page {{
     width: 210mm;
     min-height: 297mm;
@@ -923,7 +923,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .detail-lines {{
     margin: 2px 0 0;
-    font-size: 11px;
+    font-size: 12px;
   }}
   .detail-line {{ margin: 1px 0; }}
   .event-note {{
@@ -1159,7 +1159,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   <title>LTRS 2026 Schedule - A4 Two Side</title>
   <style>
 {base_css()}
-  @page {{ size: A4 portrait; margin: 8mm; }}
+  @page {{ size: A4 portrait; margin: 0; }}
   .a4-page {{
     width: 210mm;
     min-height: 297mm;
@@ -1299,7 +1299,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   }}
   .detail-lines {{
     margin: 2px 0 0;
-    font-size: 11px;
+    font-size: 12px;
   }}
   .detail-line {{ margin: 1px 0; }}
   .event-note {{
