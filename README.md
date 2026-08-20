@@ -15,7 +15,9 @@ Two pipelines live in this repo:
 .\.venv\Scripts\python.exe "python scripts/make_ltrs2026_schedule.py"
 ```
 
-Input: `input/LTRS2026 schedule.xlsx`, sheet `LTRS2026 (v1)`
+Input: `input/LTRS2026 schedule.xlsx`. By default the pipeline reads whichever sheet is first in
+the workbook, regardless of its name — pass `--sheet "Some Name"` to target a specific sheet
+instead.
 
 Outputs written to `output/`:
 

@@ -17,7 +17,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT_XLSX = PROJECT_ROOT / "input" / "LTRS2026 schedule.xlsx"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
-DEFAULT_SHEET = "LTRS2026 (v1)"
+DEFAULT_SHEET = None  # None = first sheet in the workbook, whatever it's called
 DEFAULT_BASE_NAME = "ltrs2026"
 
 
@@ -29,7 +29,11 @@ def run(cmd: list[str]) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run parse + render for LTRS2026 schedule outputs.")
     parser.add_argument("--input", default=str(DEFAULT_INPUT_XLSX), help="Input schedule workbook (.xlsx)")
-    parser.add_argument("--sheet", default=DEFAULT_SHEET, help="Workbook sheet name")
+    parser.add_argument(
+        "--sheet",
+        default=DEFAULT_SHEET,
+        help="Workbook sheet name (default: first sheet in the workbook, whatever it's called)",
+    )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
     parser.add_argument("--base-name", default=DEFAULT_BASE_NAME, help="Output filename prefix")
     args = parser.parse_args()
@@ -50,13 +54,13 @@ def main() -> int:
         str(parse_script),
         "--input",
         str(args.input),
-        "--sheet",
-        args.sheet,
         "--output-json",
         str(parsed_json),
         "--output-report",
         str(parse_report),
     ]
+    if args.sheet is not None:
+        parse_cmd += ["--sheet", args.sheet]
     if run(parse_cmd) != 0:
         print("[FAIL] Parse step failed")
         return 1

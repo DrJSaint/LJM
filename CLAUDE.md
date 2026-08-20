@@ -450,6 +450,33 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — default to first sheet regardless of name)
+Same session, after the beige-paper PDF work above. User asked (having first asked about
+multi-sheet workbooks earlier — see the "quick question" note above): "Is it possible for the
+script to take the first sheet in the workbook, by default, whatever it's called?"
+
+- **`parse_ltrs2026_v1.py`:** `DEFAULT_SHEET_NAME` changed from the literal `"LTRS2026 (v1)"` to
+  `None`. In `parse_v1()`, when `sheet_name is None`, it's resolved up front via
+  `pd.ExcelFile(input_file, engine="openpyxl").sheet_names[0]` — the workbook's first sheet by
+  position — *before* the actual read, specifically so the parse report/JSON's `"sheet"` field
+  still shows the real resolved name (e.g. "RandomFirstSheetName") rather than an opaque `0`.
+  `--sheet` still accepts an explicit name to override this. Docstring and `--help` text updated
+  to match.
+- **`make_ltrs2026_schedule.py`:** `DEFAULT_SHEET` also changed to `None`; the `--sheet` flag is
+  only appended to the `parse_ltrs2026_v1.py` subprocess call when explicitly given, so the
+  no-flag case falls through to that script's own first-sheet default rather than duplicating the
+  "first sheet" logic in two places.
+- `app.py`'s `run_ltrs_pipeline()` was already not passing `--sheet` at all, so it picks this up
+  for free with no changes needed there.
+- **Verified, not just reasoned through:** confirmed the real `input/LTRS2026 schedule.xlsx`
+  already has `LTRS2026 (v1)` as its first of six sheets (`['LTRS2026 (v1)', 'LTRS2026 (v2)',
+  'LTRS2026 (prev)', 'LTRS2025', 'Sheet1', 'LTRS2026 (prev 1)']`), so the existing default local
+  workflow is unaffected — then built a synthetic two-sheet workbook with an oddly-named first
+  sheet (`RandomFirstSheetName`) and a second sheet literally named `LTRS2026 (v1)` containing
+  different content, ran the parser against it with no `--sheet` flag, and confirmed it picked
+  the first sheet by position (`RandomFirstSheetName`'s row, not the named sheet's) — proving
+  this is genuinely position-based, not falling back to name-matching under the hood.
+
 ## Session Log (2026-08-20, cont'd — beige-paper PDF variant)
 Same session, after the border/font fixes below. User reminded me of an earlier flagged
 possibility ([[project-multi-tool-workflow]]-adjacent note from the color-centralization

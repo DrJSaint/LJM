@@ -22,7 +22,8 @@ Outputs:
   output/ltrs2026_v1_parsed.json
   output/ltrs2026_v1_parse_report.txt
 
-This script reads only the sheet named "LTRS2026 (v1)".
+By default this script reads the first sheet in the workbook, whatever it's called. Pass
+--sheet to target a specific sheet by name instead.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ DEFAULT_INPUT_FILE = PROJECT_ROOT / "input" / "LTRS2026 schedule.xlsx"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_SHEET_NAME = "LTRS2026 (v1)"
+DEFAULT_SHEET_NAME = None  # None = first sheet in the workbook, whatever it's called
 DEFAULT_OUTPUT_JSON = OUTPUT_DIR / "ltrs2026_v1_parsed.json"
 DEFAULT_OUTPUT_REPORT = OUTPUT_DIR / "ltrs2026_v1_parse_report.txt"
 
@@ -264,9 +265,16 @@ def parse_presentation_sessions(rows: List[Dict[str, Any]], i: int) -> tuple[Dic
     return parent, i
 
 
-def parse_v1(input_file: Path, sheet_name: str) -> Dict[str, Any]:
+def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
     if not input_file.exists():
         raise FileNotFoundError(f"Cannot find input file: {input_file}")
+
+    if sheet_name is None:
+        # No sheet name given — take whichever sheet is first in the workbook,
+        # regardless of what it's called. Resolved to a real name up front (rather
+        # than passing pandas a positional index) so the parse report/JSON can show
+        # the actual sheet that got read, not just "0".
+        sheet_name = pd.ExcelFile(input_file, engine="openpyxl").sheet_names[0]
 
     df = pd.read_excel(input_file, sheet_name=sheet_name, engine="openpyxl")
 
@@ -361,7 +369,11 @@ def build_report(parsed: Dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse LTRS schedule workbook into JSON.")
     parser.add_argument("--input", default=str(DEFAULT_INPUT_FILE), help="Input .xlsx workbook path")
-    parser.add_argument("--sheet", default=DEFAULT_SHEET_NAME, help="Worksheet name to parse")
+    parser.add_argument(
+        "--sheet",
+        default=DEFAULT_SHEET_NAME,
+        help="Worksheet name to parse (default: first sheet in the workbook, whatever it's called)",
+    )
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON), help="Output parsed JSON path")
     parser.add_argument("--output-report", default=str(DEFAULT_OUTPUT_REPORT), help="Output parse report path")
     args = parser.parse_args()
