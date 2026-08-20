@@ -19,6 +19,10 @@ Input: `input/LTRS2026 schedule.xlsx`. By default the pipeline reads whichever s
 the workbook, regardless of its name — pass `--sheet "Some Name"` to target a specific sheet
 instead.
 
+If the target sheet doesn't look like an LTRS schedule (none of the expected columns — Start,
+Duration, End, Event, Location, Presenter, Chair — are present) or has no usable rows, the
+pipeline fails with a specific error message instead of silently generating a blank schedule.
+
 Outputs written to `output/`:
 
 | File | Description |

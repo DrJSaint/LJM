@@ -29,6 +29,7 @@ By default this script reads the first sheet in the workbook, whatever it's call
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import json
@@ -280,6 +281,21 @@ def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
 
     # Keep only the expected columns and normalise missing columns.
     expected = ["Start", "Duration", "End", "Event", "Location", "Presenter", "Chair"]
+
+    # Checked against the sheet's real columns, before any are backfilled below —
+    # a sheet with none of these is almost certainly the wrong sheet/file entirely
+    # (e.g. a non-LTRS workbook, or a summary/notes tab), not just missing a
+    # column or two. Catching this here gives a specific, actionable message
+    # instead of silently producing an empty schedule.
+    original_columns = {str(c).strip() for c in df.columns}
+    if not original_columns & set(expected):
+        found = ", ".join(str(c) for c in df.columns) or "(no columns)"
+        raise ValueError(
+            f"Sheet '{sheet_name}' doesn't look like an LTRS schedule — none of the expected "
+            f"columns (Start, Duration, End, Event, Location, Presenter, Chair) were found. "
+            f"Found: {found}."
+        )
+
     for col in expected:
         if col not in df.columns:
             df[col] = ""
@@ -324,6 +340,18 @@ def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
             })
             i += 1
 
+    # A sheet that has the right columns but no rows shaped like real schedule
+    # entries (each needs a Start time and an Event) produces only "unparsed_row"
+    # placeholders rather than raising outright — catch that here so it surfaces
+    # as an error instead of rendering a blank-looking schedule.
+    real_blocks = [block for block in programme if block.get("type") != "unparsed_row"]
+    if not real_blocks:
+        raise ValueError(
+            f"No usable schedule rows were found on sheet '{sheet_name}' — it may be empty, "
+            f"or the data isn't in the expected format (each event needs a Start time and an "
+            f"Event value in the row directly below the header row)."
+        )
+
     return {
         "source_file": str(input_file),
         "sheet": sheet_name,
@@ -366,6 +394,11 @@ def build_report(parsed: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def fail(message: str) -> None:
+    print(f"[FAIL] {message}", file=sys.stderr)
+    sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse LTRS schedule workbook into JSON.")
     parser.add_argument("--input", default=str(DEFAULT_INPUT_FILE), help="Input .xlsx workbook path")
@@ -384,7 +417,10 @@ def main() -> None:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_report.parent.mkdir(parents=True, exist_ok=True)
 
-    parsed = parse_v1(input_file=input_file, sheet_name=args.sheet)
+    try:
+        parsed = parse_v1(input_file=input_file, sheet_name=args.sheet)
+    except (FileNotFoundError, ValueError) as exc:
+        fail(str(exc))
 
     output_json.write_text(
         json.dumps(parsed, indent=2, ensure_ascii=False),

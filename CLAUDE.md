@@ -450,6 +450,54 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — friendly errors for a dodgy/empty sheet)
+Same session, right after the first-sheet-by-default change above, which prompted the user to
+notice the flip side: "It would be useful if it provided an error warning if you uploaded a dodgy
+sheet, say with no data, or a non LTRS sheet. Currently it still renders a blank schedule."
+
+- **Root-caused why it went silently blank, in `parse_ltrs2026_v1.py`'s `parse_v1()`.** The
+  column-normalisation step (`for col in expected: if col not in df.columns: df[col] = ""`)
+  backfills every missing expected column with blanks *unconditionally* — so a completely
+  unrelated sheet (wrong columns entirely) doesn't error, it just gets treated as a sheet full of
+  blank cells. Every row then fails the `is_block_header` check (needs a Start time and an Event
+  value) and the "skip fully blank rows" check catches it, so `programme` ends up `[]` with no
+  exception raised anywhere — the render step then dutifully builds a technically-valid but empty
+  schedule. A subtler variant: a sheet with *some* matching columns but rows that don't look like
+  real schedule entries doesn't produce an empty `programme` either — it produces a list of
+  `"unparsed_row"` placeholder entries, which the renderer doesn't know how to draw, so it *still*
+  comes out blank-looking despite `programme` being non-empty.
+- **Added two validation checks in `parse_v1()`**, both raising `ValueError` with a specific,
+  actionable message rather than continuing to a blank render:
+  1. Right after reading the sheet, checked *before* the backfill step (so it sees the sheet's
+     real original columns): if none of the 7 expected columns (`Start`, `Duration`, `End`,
+     `Event`, `Location`, `Presenter`, `Chair`) are present at all, fail immediately and name
+     which columns *were* found — catches "wrong sheet/file entirely" (e.g. a notes tab, a
+     completely different workbook).
+  2. After building `programme`, checked whether *any* block has a real recognised `type` (not
+     just `"unparsed_row"`) — catches both a genuinely empty sheet (zero data rows) and a sheet
+     with the right columns but rows that don't parse into anything meaningful.
+- **Wired through the same `[FAIL]`/`fail()` convention already used by the LJM/MLO extractor**
+  (see section 8, "Friendly extraction error messages") — added an identical `fail(message)`
+  helper (`print(f"[FAIL] {message}", file=sys.stderr); sys.exit(1)`) and wrapped `main()`'s call
+  to `parse_v1()` in `try/except (FileNotFoundError, ValueError)`, routing both through `fail()`.
+  This also incidentally gives the pre-existing "input file doesn't exist" case (previously an
+  unhandled raw traceback) the same friendly treatment for free.
+- **Confirmed the friendly message survives the full subprocess chain unmodified**, not just
+  assumed it would: `make_ltrs2026_schedule.py`'s `run()` helper doesn't capture the child
+  process's output (`subprocess.run(cmd, text=True)`, no `capture_output`), so
+  `parse_ltrs2026_v1.py`'s stderr passes straight through to the orchestrator's own stderr; then
+  simulated exactly what `app.py`'s `run_ltrs_pipeline()` does
+  (`subprocess.run(orchestrator_cmd, capture_output=True, text=True)`) and confirmed the last
+  line of `completed.stderr` is precisely the specific `[FAIL] Sheet '...' doesn't look like an
+  LTRS schedule...` message — i.e. this will genuinely reach `st.error(...)` in the Streamlit UI
+  worded exactly as written, not just a generic "pipeline failed" fallback.
+- **Verified with real dodgy inputs, not just code reading:** built one workbook with entirely
+  unrelated columns (`Name`, `Score`) and one with the correct 7 columns but zero data rows,
+  confirmed both fail cleanly with exit code 1, the specific messages above, and — checked
+  explicitly — no partial/blank JSON or report file gets written on either failure path. Also
+  re-ran the full pipeline against the real `input/LTRS2026 schedule.xlsx` afterwards to confirm
+  no false-positive regression on valid data.
+
 ## Session Log (2026-08-20, cont'd — default to first sheet regardless of name)
 Same session, after the beige-paper PDF work above. User asked (having first asked about
 multi-sheet workbooks earlier — see the "quick question" note above): "Is it possible for the
