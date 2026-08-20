@@ -672,7 +672,16 @@ def cover_card(parsed: dict, programme: list[dict], cards: list[dict]) -> dict:
     return to_card("LTRS 2026", source_name, lines, GREEN)
 
 
-def base_css() -> str:
+def base_css(beige_paper: bool = False) -> str:
+    # beige_paper=True is used only by the two-side "beige paper" PDF variant: every
+    # background that's currently painted cream becomes no-fill (transparent), so a
+    # pre-printed beige sheet shows through instead of the printer laying down cream
+    # ink/toner on top of it. Text that happens to be cream-coloured (e.g. the green
+    # banner's lettering) is unaffected — that's providing contrast against printed
+    # green ink, not matching the paper, so it must keep printing normally regardless
+    # of paper colour. --cream-bg is the single point where that distinction lives;
+    # everywhere else keeps using --cream directly for real cream-coloured content.
+    cream_bg = "transparent" if beige_paper else "var(--cream)"
     return f"""
     @font-face {{
       font-family: "Magnole";
@@ -699,7 +708,8 @@ def base_css() -> str:
       --white: {WHITE};
       --border-grey: {BORDER_GREY};
       --screen-preview-backdrop: {SCREEN_PREVIEW_BACKDROP};
-      --row-event: var(--cream);
+      --cream-bg: {cream_bg};
+      --row-event: var(--cream-bg);
       --row-break: {ROW_BREAK};
       --row-plenary: var(--lilac);
       --row-workshop: var(--lilac);
@@ -714,7 +724,7 @@ def base_css() -> str:
     body {{
       margin: 0;
       color: var(--dark);
-      background: var(--cream);
+      background: var(--cream-bg);
       font-family: "AvenirLocal", "Avenir Next", Arial, sans-serif;
       line-height: 1.25;
     }}
@@ -1145,7 +1155,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
 """
 
 
-def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
+def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bool = False) -> str:
     rows = build_onepager_rows(programme)
     front_rows, back_rows = split_rows_two_sides(rows)
     front_rows_html = render_schedule_rows(front_rows)
@@ -1158,7 +1168,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LTRS 2026 Schedule - A4 Two Side</title>
   <style>
-{base_css()}
+{base_css(beige_paper=beige_paper)}
   @page {{ size: A4 portrait; margin: 0; }}
   .a4-page {{
     width: 210mm;
@@ -1166,7 +1176,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     padding: 8mm;
     margin: 0 auto;
     page-break-after: always;
-    background: var(--cream);
+    background: var(--cream-bg);
     display: flex;
     flex-direction: column;
   }}
@@ -1278,7 +1288,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     border: 1px solid var(--border-grey);
     padding: 3px 6px;
     vertical-align: top;
-    background: var(--cream);
+    background: var(--cream-bg);
   }}
   .location-col {{
     width: 18%;
@@ -1288,7 +1298,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     text-align: left;
     font-size: 12px;
     font-weight: 700;
-    background: var(--cream);
+    background: var(--cream-bg);
   }}
   .event-shell h3 {{
     font-family: "Magnole", Georgia, serif;
@@ -1350,7 +1360,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict]) -> str:
     vertical-align: top;
     border-left: 1px solid var(--border-grey);
     border-right: 1px solid var(--border-grey);
-    background: var(--cream);
+    background: var(--cream-bg);
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
@@ -1984,14 +1994,24 @@ def main() -> None:
 
     single_html = output_dir / f"{args.base_name}_single_page.html"
     two_side_html = output_dir / f"{args.base_name}_a4_two_side.html"
+    two_side_html_beige = output_dir / f"{args.base_name}_a4_two_side_beige.html"
     fold_html = output_dir / f"{args.base_name}_a4_fold_card.html"
 
     single_html.write_text(render_single_page_html(parsed, programme), encoding="utf-8")
     two_side_html.write_text(render_two_side_a4_html(parsed, programme), encoding="utf-8")
+    # Beige-paper variant: same content, cream backgrounds set to no-fill so a
+    # pre-printed beige sheet shows through instead of the printer laying down cream
+    # ink on top of it. Print/PDF-only distinction (@page CSS never applies to a
+    # plain browser view) — not surfaced as its own app-facing deliverable, only its
+    # exported PDF is (see make_ltrs2026_schedule.py / app.py).
+    two_side_html_beige.write_text(
+        render_two_side_a4_html(parsed, programme, beige_paper=True), encoding="utf-8"
+    )
     fold_html.write_text(render_fold_card_a4_html(parsed, programme, cards), encoding="utf-8")
 
     print(f"Wrote HTML: {single_html}")
     print(f"Wrote HTML: {two_side_html}")
+    print(f"Wrote HTML: {two_side_html_beige}")
     print(f"Wrote HTML: {fold_html}")
 
 

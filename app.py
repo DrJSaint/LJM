@@ -282,14 +282,20 @@ def run_ltrs_pipeline(uploaded_file) -> dict[str, Path]:
     results: dict[str, Path] = {}
     single_html = output_dir / f"{base_name}_single_page.html"
     two_side_html = output_dir / f"{base_name}_a4_two_side.html"
-    two_side_pdf = output_dir / f"{base_name}_a4_two_side.pdf"
+    # Fixed filenames, not templated by base_name — these are the two print-ready PDF
+    # variants (digital/white paper vs pre-printed beige paper), see
+    # make_ltrs2026_schedule.py and render_ltrs2026_booklet.py's beige_paper note.
+    two_side_pdf_digital = output_dir / "LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf"
+    two_side_pdf_beige = output_dir / "LTRS_A4_PDF_BeigePaperPrint.pdf"
 
     if single_html.exists():
         results["ltrs_single_html"] = single_html
     if two_side_html.exists():
         results["ltrs_two_side_html"] = two_side_html
-    if two_side_pdf.exists():
-        results["ltrs_two_side_pdf"] = two_side_pdf
+    if two_side_pdf_digital.exists():
+        results["ltrs_two_side_pdf_digital"] = two_side_pdf_digital
+    if two_side_pdf_beige.exists():
+        results["ltrs_two_side_pdf_beige"] = two_side_pdf_beige
 
     return results
 
@@ -324,7 +330,8 @@ def build_zip(results: dict[str, Path], base_name: str, alt_text: dict[str, str]
 
 def build_ltrs_zip(results: dict[str, Path], base_name: str) -> bytes:
     names = {
-        "ltrs_two_side_pdf": f"{base_name}_a4_two_side.pdf",
+        "ltrs_two_side_pdf_digital": "LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf",
+        "ltrs_two_side_pdf_beige": "LTRS_A4_PDF_BeigePaperPrint.pdf",
         "ltrs_two_side_html": f"{base_name}_a4_two_side.html",
         "ltrs_single_html": f"{base_name}_single_page.html",
     }
@@ -502,11 +509,19 @@ def main() -> None:
             type="primary",
         )
 
-        if "ltrs_two_side_pdf" in results:
+        if "ltrs_two_side_pdf_digital" in results:
             st.download_button(
-                "Download Two-Side PDF",
-                data=file_bytes(results["ltrs_two_side_pdf"]),
-                file_name=f"{base_name}_a4_two_side.pdf",
+                "Download Two-Side PDF (Digital / White Paper)",
+                data=file_bytes(results["ltrs_two_side_pdf_digital"]),
+                file_name="LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf",
+                mime="application/pdf",
+            )
+
+        if "ltrs_two_side_pdf_beige" in results:
+            st.download_button(
+                "Download Two-Side PDF (Beige Paper)",
+                data=file_bytes(results["ltrs_two_side_pdf_beige"]),
+                file_name="LTRS_A4_PDF_BeigePaperPrint.pdf",
                 mime="application/pdf",
             )
 

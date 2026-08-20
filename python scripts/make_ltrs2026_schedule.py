@@ -77,11 +77,18 @@ def main() -> int:
 
     single_page_html = (output_dir / f"{args.base_name}_single_page.html").resolve()
     two_side_html = (output_dir / f"{args.base_name}_a4_two_side.html").resolve()
-    two_side_pdf = (output_dir / f"{args.base_name}_a4_two_side.pdf").resolve()
+    two_side_html_beige = (output_dir / f"{args.base_name}_a4_two_side_beige.html").resolve()
+    # Fixed, non-base-name-prefixed filenames per user request — these two PDFs are
+    # the actual print deliverables (digital/white paper vs pre-printed beige paper);
+    # their *_beige.html source above is an internal render step, not a deliverable
+    # in its own right (see render_ltrs2026_booklet.py's beige_paper note).
+    digital_pdf = (output_dir / "LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf").resolve()
+    beige_pdf = (output_dir / "LTRS_A4_PDF_BeigePaperPrint.pdf").resolve()
 
     pdf_ok = True
     for html_path, pdf_path in [
-        (two_side_html, two_side_pdf),
+        (two_side_html, digital_pdf),
+        (two_side_html_beige, beige_pdf),
     ]:
         pdf_cmd = [
             sys.executable,
@@ -98,10 +105,14 @@ def main() -> int:
     print(f"[OK] Parse report:    {parse_report}")
     print(f"[OK] Single page:     {single_page_html}")
     print(f"[OK] A4 two side:     {two_side_html}")
-    if pdf_ok:
-        print(f"[OK] A4 two side PDF: {two_side_pdf}")
+    if digital_pdf.exists():
+        print(f"[OK] A4 two side PDF (digital/white):  {digital_pdf}")
     else:
-        print(f"[FAIL] A4 two side PDF: {two_side_pdf} (export failed — see warning above)")
+        print(f"[FAIL] A4 two side PDF (digital/white): {digital_pdf} (export failed — see warning above)")
+    if beige_pdf.exists():
+        print(f"[OK] A4 two side PDF (beige paper):     {beige_pdf}")
+    else:
+        print(f"[FAIL] A4 two side PDF (beige paper): {beige_pdf} (export failed — see warning above)")
     print(f"[OK] A4 fold card:    {output_dir / (args.base_name + '_a4_fold_card.html')}")
     return 0 if pdf_ok else 1
 

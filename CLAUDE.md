@@ -450,6 +450,58 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — beige-paper PDF variant)
+Same session, after the border/font fixes below. User reminded me of an earlier flagged
+possibility ([[project-multi-tool-workflow]]-adjacent note from the color-centralization
+session: "there is a chance we may source some beige paper... I may ask to change our beige to
+no-fill in the future") and asked to actually build it: two versions of the two-side PDF, one
+for digital/white-paper printing (current behaviour) and one for pre-printed beige paper where
+"all currently beige coloured stuff (background, text) would be no-fill." User also said this
+only applies to the PDF artifact, not the HTML outputs.
+
+- **Asked a clarifying question before building anything**, since a wrong guess here means
+  literally invisible text on a printed conference schedule, not just a cosmetic miss. Checked
+  where `var(--cream)` is actually used in the CSS and found it's not just backgrounds — it's
+  also the *text* color for the green header banner's lettering, the schedule-table header row,
+  and the Time column (cream-on-green, for contrast). Removing fill from a cream *background*
+  makes sense on beige paper (the paper already supplies that color, no need to print it) — but
+  cream *text* sitting on printed green ink isn't "matching the paper," it's providing contrast
+  against the green, and would just vanish if made no-fill regardless of paper color. Asked via
+  `AskUserQuestion`; user confirmed **backgrounds only**, text stays as real cream ink. Also
+  confirmed the exact desired filenames: `LTRS_A4_PDF_BeigePaperPrint.pdf` and
+  `LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf`, replacing the old `{base_name}_a4_two_side.pdf`
+  naming for these two specific files (not templated by base_name).
+- **Implementation, `render_ltrs2026_booklet.py`:** `base_css()` gained a `beige_paper: bool =
+  False` parameter and a new `--cream-bg` CSS variable — `var(--cream)` when `False` (identical
+  output to before, zero behaviour change for single-page/fold-card, which never pass this),
+  `transparent` when `True`. Every *background-only* cream usage in the two-side scope
+  (`.a4-page`, `.event-col`, `.location-col`, default `.track-cell`, `--row-event`, `body`) was
+  repointed from `var(--cream)` to `var(--cream-bg)`; every *text*-color cream usage
+  (`.schedule-header`, its `h1`, `.schedule-table thead th`, `.time-col`,
+  `.row-parallel_sessions/workshops .track-row-header .track-cell`, the `@media print`
+  `!important` overrides) was deliberately left alone. `render_two_side_a4_html()` gained the
+  same `beige_paper: bool = False` parameter, threaded straight through to `base_css()`. `main()`
+  now writes a second HTML file, `{base_name}_a4_two_side_beige.html` — an internal render
+  step/export source, not an app-facing deliverable in its own right (only its exported PDF is,
+  per the user's "PDF artifact, not HTML" framing).
+- **Implementation, `make_ltrs2026_schedule.py`:** the PDF-export loop now runs twice — once per
+  two-side HTML variant — writing to the two fixed filenames above instead of the old
+  `{base_name}_a4_two_side.pdf`. `pdf_ok`/exit-code reporting (see the border/font-size session
+  above) now covers both exports.
+- **Implementation, `app.py`:** `run_ltrs_pipeline()` looks up both fixed PDF filenames (renamed
+  result keys `ltrs_two_side_pdf_digital` / `ltrs_two_side_pdf_beige`, replacing the old single
+  `ltrs_two_side_pdf` key); `build_ltrs_zip()` bundles both under their real filenames; the
+  downloads section now shows two separate buttons, "Download Two-Side PDF (Digital / White
+  Paper)" and "Download Two-Side PDF (Beige Paper)".
+- **Verified by rendering, not just reasoning from CSS** (per [[feedback-visual-verification]]):
+  regenerated the full pipeline, rendered both exported PDFs' first pages to PNG (`pypdfium2`,
+  the same one-off local verification tool from the border-fix earlier this session), and
+  visually confirmed the beige variant's previously-cream rows are genuinely blank/no-fill (would
+  show the physical beige paper) while the green/lilac fills and the banner's cream lettering are
+  completely unaffected — and separately re-confirmed the digital variant is byte-for-byte
+  unchanged in appearance (still cream backgrounds, no border regression, no font-size
+  regression) despite the shared `base_css()` refactor underneath it.
+
 ## Session Log (2026-08-20 — printed two-pager: white PDF border, presenter text size)
 User printed the two-side PDF for the first time and flagged two things from the physical
 printout, both in `render_ltrs2026_booklet.py` (two-side and single-page CSS; fold-card untouched

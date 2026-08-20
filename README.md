@@ -22,10 +22,18 @@ Outputs written to `output/`:
 | File | Description |
 |------|-------------|
 | `ltrs2026_single_page.html` | One-page continuous branded schedule |
-| `ltrs2026_a4_two_side.html` + `.pdf` | Two-sided A4 duplex (front/back) |
+| `ltrs2026_a4_two_side.html` | Two-sided A4 duplex (front/back), digital/white-paper source |
+| `ltrs2026_a4_two_side_beige.html` | Same content, cream backgrounds no-fill — beige-paper print source (internal, not a standalone deliverable) |
+| `LTRS_A4_PDF_Digital_or_WhitePaperPrint.pdf` | Two-side PDF for screen viewing or printing on white paper |
+| `LTRS_A4_PDF_BeigePaperPrint.pdf` | Two-side PDF for printing on pre-printed beige paper — cream backgrounds are left unpainted so the paper's own colour shows through; text stays fully printed |
 | `ltrs2026_a4_fold_card.html` | Landscape fold card (Q4\|Q1 outer, Q2\|Q3 inner) |
 | `ltrs2026_parsed.json` | Structured schedule data |
 | `ltrs2026_parse_report.txt` | Human-readable parse summary |
+
+The two PDF filenames are fixed (not prefixed by the input filename) since they're the literal
+print deliverables handed to a print shop. Only cream *backgrounds* are removed in the beige
+variant — cream *text* (the green banner's lettering, the Time column) stays as real printed ink,
+since that's providing contrast against printed green, not matching the paper.
 
 The fold card's four quarters are split by actually rendering and measuring each candidate panel against the physical page size (`split_rows_by_fit()` in `render_ltrs2026_booklet.py`), not an abstract content-weight guess — so generating it takes a few seconds longer than the other two outputs while it launches headless Chromium to check the fit. See CLAUDE.md's "fold-card rebuild" session log for detail. Some further tweaks are expected in a future session; treat it as working, not finished.
 
@@ -252,7 +260,8 @@ the code, not deleted — re-enable it in `app.py` if you want it back). Downloa
 individually — ZIP, PDF, MLO PNG, LJM PNG — plus a "Download all as ZIP" primary button.
 
 **LTRS mode** (`.xlsx` upload): runs the LTRS orchestrator (`make_ltrs2026_schedule.py`) and
-offers the two-side PDF, two-side HTML, and single-page HTML individually plus a "Download all as
+offers both two-side PDF variants (digital/white paper and beige paper — see the LTRS pipeline's
+outputs table above), two-side HTML, and single-page HTML individually plus a "Download all as
 ZIP" button. The fold card is generated behind the scenes but not exposed here — it's deliberately
 excluded from the Streamlit flow for now. The sidebar's LJM-only controls (date picker, week
 count, layout mode) are hidden for this mode since they don't apply.
