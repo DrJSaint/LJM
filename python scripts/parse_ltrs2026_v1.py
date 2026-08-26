@@ -58,7 +58,13 @@ DEFAULT_OUTPUT_REPORT = OUTPUT_DIR / "ltrs2026_v1_parse_report.txt"
 # -----------------------------------------------------------------------------
 
 def clean(value: Any) -> str:
-    """Return a tidy string, or empty string for missing values."""
+    """Return a tidy string, or empty string for missing values.
+
+    Preserves intentional line breaks (e.g. Alt+Enter in Excel, used for a
+    two-line event title) while still collapsing incidental horizontal
+    whitespace within each line - a manual line break is meaningful content,
+    not whitespace to be squashed away.
+    """
     if value is None:
         return ""
     try:
@@ -66,9 +72,9 @@ def clean(value: Any) -> str:
             return ""
     except TypeError:
         pass
-    text = str(value).replace("\u00a0", " ").strip()
-    text = re.sub(r"\s+", " ", text)
-    return text
+    text = str(value).replace("\u00a0", " ")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 def fmt_time(value: Any) -> str:

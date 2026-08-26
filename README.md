@@ -43,6 +43,8 @@ since that's providing contrast against printed green, not matching the paper.
 
 The fold card's four quarters are split by actually rendering and measuring each candidate panel against the physical page size (`split_rows_by_fit()` in `render_ltrs2026_booklet.py`), not an abstract content-weight guess — so generating it takes a few seconds longer than the other two outputs while it launches headless Chromium to check the fit. See CLAUDE.md's "fold-card rebuild" session log for detail. Some further tweaks are expected in a future session; treat it as working, not finished.
 
+A manual line break in an Event cell (Alt+Enter in Excel) carries through to the rendered title — useful for a short "kicker" line above a longer subtitle (e.g. "Keynote" / "Navigating Without a Compass: ..."). Other whitespace in the cell is still tidied up as normal; only the line break itself is preserved.
+
 ### Quick style toggles
 
 Near the top of `render_ltrs2026_booklet.py`, alongside the brand palette constants:

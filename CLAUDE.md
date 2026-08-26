@@ -450,6 +450,33 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — manual line breaks in event titles)
+Same session. User showed a screenshot of an Excel cell where they'd used Alt+Enter to put an
+event title on two lines ("Keynote" / "Navigating Without a Compass: ..."), and asked whether
+that line break can carry through to the rendered output.
+
+- **Root cause, `parse_ltrs2026_v1.py`'s `clean()`:** `re.sub(r"\s+", " ", text)` collapsed *all*
+  whitespace, newlines included, into a single space — so a manual line break in Excel was
+  silently flattened before it ever reached the renderer. Fixed by preserving line breaks while
+  still collapsing incidental horizontal whitespace *within* each line: split on `splitlines()`
+  (normalises `\r\n`/`\r`/`\n` alike), collapse runs of spaces/tabs and strip each line
+  individually, drop lines that end up empty, then rejoin with `\n`. Applies to every field parsed
+  through `clean()` (not just Event), but only Event/title text is realistically ever multi-line
+  in practice, and the structural marker comparisons (`event == "Plenary (VC Funding)"` etc.)
+  still match correctly since those literal strings never contain manual breaks.
+- **`render_ltrs2026_booklet.py`:** added `white-space: pre-line;` to `.event-shell h3` (the title
+  element every event/workshop/plenary/session-block title renders through, via the shared
+  `render_event_cell()`) in all three CSS scopes — single-page, two-side, fold-card. `e()` already
+  HTML-escapes without touching `\n` (only `& < > " '`), so the preserved newline just needed a
+  CSS rule that actually renders it as a visual break rather than collapsing it back down (the
+  browser/print default for a literal `\n` in HTML text).
+- **Verified by rendering, not just reasoning from CSS:** built a synthetic workbook with an Event
+  cell containing the exact same two-line text from the user's screenshot, ran the full pipeline,
+  confirmed the `\n` survived into the parsed JSON, then rendered the exported PDF's first page to
+  a PNG and visually confirmed "Keynote" now sits on its own line above the long subtitle, matching
+  the source Excel formatting. Re-ran against the real workbook afterward to confirm ordinary
+  single-line titles are unaffected (no accidental wrapping/regression).
+
 ## Session Log (2026-08-20, cont'd — friendly errors for a dodgy/empty sheet)
 Same session, right after the first-sheet-by-default change above, which prompted the user to
 notice the flip side: "It would be useful if it provided an error warning if you uploaded a dodgy

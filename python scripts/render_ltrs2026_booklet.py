@@ -930,6 +930,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     font-size: 18px;
     line-height: 1.05;
     margin: 0;
+    white-space: pre-line;
   }}
   .detail-lines {{
     margin: 2px 0 0;
@@ -1306,6 +1307,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bo
     font-size: 18px;
     line-height: 1.05;
     margin: 0;
+    white-space: pre-line;
   }}
   .detail-lines {{
     margin: 2px 0 0;
@@ -1694,6 +1696,7 @@ def fold_card_css() -> str:
     font-size: 15px;
     line-height: 1.04;
     margin: 0;
+    white-space: pre-line;
   }}
   .detail-lines {{ margin: 1px 0 0; font-size: 12px; }}
   .detail-line {{ margin: 0; }}
