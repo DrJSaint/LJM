@@ -62,6 +62,12 @@ Every color used in single-page and two-side is a single named constant at the t
 those two outputs. Change a constant, rerun the pipeline, and it updates everywhere that color
 is used. Fold-card keeps its own separate, independent set of color values for now.
 
+Single-page and two-side also share their schedule-table/track-grid CSS via one function,
+`schedule_table_css()` — a change there (border width, font size, spacing, etc.) applies to both
+outputs at once instead of needing to be hand-copied into each. Fold-card keeps its own separate
+`fold_card_css()`, since its landscape/narrower-panel layout is genuinely different, not just a
+duplicate.
+
 ### PDF printing tips
 
 - Enable **Background graphics** in the print dialog (or use the pipeline's built-in Playwright export).

@@ -796,28 +796,17 @@ def base_css(beige_paper: bool = False) -> str:
     """
 
 
-def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
-    rows = build_onepager_rows(programme)
-    rows_html = render_schedule_rows(rows)
-
-    source_name = Path(parsed.get("source_file", "")).name or "LTRS2026 schedule.xlsx"
-
-    return f"""<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LTRS 2026 Schedule - Single Page</title>
-  <style>
-{base_css()}
-  @page {{ size: A4 portrait; margin: 0; }}
-  .single-page {{
-    width: 210mm;
-    min-height: 297mm;
-    margin: 0 auto;
-    background: var(--cream);
-    padding: 8mm;
-  }}
+def schedule_table_css(background_var: str = "var(--cream)") -> str:
+    # Shared by single-page and two-side, which are otherwise near-identical A4
+    # portrait layouts — extracted so a change to the schedule table/track-grid
+    # styling only needs to happen once instead of being hand-mirrored into both
+    # (see the 2026-08-05 session log on how that duplication let a real bug slip
+    # through on fold-card once already). fold-card is NOT built on this — it has
+    # a genuinely different layout (landscape, narrower panels) and keeps its own
+    # `fold_card_css()`, so this only ever needs to serve these two.
+    # background_var lets two-side's beige-paper PDF variant swap in --cream-bg
+    # (no-fill) while single-page always keeps the literal --cream fill.
+    return f"""
   .schedule-header {{
     background: var(--green);
     color: var(--cream);
@@ -866,17 +855,6 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     line-height: 1.2;
     margin-top: 2px;
   }}
-  .sr-only {{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }}
   .schedule-table {{
     width: 100%;
     border-collapse: collapse;
@@ -897,6 +875,17 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     color: var(--cream);
     background: var(--green);
   }}
+  .sr-only {{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }}
   .time-col {{
     background: var(--green);
     color: var(--cream);
@@ -912,7 +901,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     border: 1px solid var(--border-grey);
     padding: 3px 6px;
     vertical-align: top;
-    background: var(--cream);
+    background: {background_var};
   }}
   .location-col {{
     width: 18%;
@@ -922,7 +911,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     text-align: left;
     font-size: 12px;
     font-weight: 700;
-    background: var(--cream);
+    background: {background_var};
   }}
   .event-shell h3 {{
     font-family: "Magnole", Georgia, serif;
@@ -985,7 +974,7 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
     vertical-align: top;
     border-left: 1px solid var(--border-grey);
     border-right: 1px solid var(--border-grey);
-    background: var(--cream);
+    background: {background_var};
     padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
@@ -1077,6 +1066,32 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
   .row-parallel_sessions .location-col {{
     background: var(--row-presentations);
   }}
+"""
+
+
+def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
+    rows = build_onepager_rows(programme)
+    rows_html = render_schedule_rows(rows)
+
+    source_name = Path(parsed.get("source_file", "")).name or "LTRS2026 schedule.xlsx"
+
+    return f"""<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LTRS 2026 Schedule - Single Page</title>
+  <style>
+{base_css()}
+  @page {{ size: A4 portrait; margin: 0; }}
+  .single-page {{
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    background: var(--cream);
+    padding: 8mm;
+  }}
+{schedule_table_css()}
   .page-footer {{
     margin-top: 20px;
     text-align: center;
@@ -1192,267 +1207,10 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bo
     height: auto;
     display: inline-block;
   }}
-  .schedule-header {{
-    background: var(--green);
-    color: var(--cream);
-    border-radius: {SCHEDULE_HEADER_RADIUS};
-    padding: 8px 10px;
-    margin-bottom: 20px;
-    text-align: center;
-  }}
-  .schedule-header-top {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    justify-content: center;
-    margin-bottom: 6px;
-  }}
-  .schedule-header-logo {{
-    width: 56px;
-    height: 56px;
-    flex-shrink: 0;
-    object-fit: contain;
-    display: block;
-  }}
-  .schedule-header h1 {{
-    font-size: 48px;
-    color: var(--cream);
-    margin: 0;
-    font-family: "Magnole", Georgia, serif;
-    font-weight: 400;
-    line-height: 0.95;
-  }}
-  .schedule-header .subtitle-line {{
-    margin-top: 4px;
-    font-size: 14px;
-    line-height: 1.2;
-  }}
-  .schedule-header .subtitle-line.magnole {{
-    font-family: "Magnole", Georgia, serif;
-    font-weight: 400;
-    font-size: 18px;
-    line-height: 1.15;
-    letter-spacing: 0;
-    white-space: nowrap;
-  }}
-  .source-line {{
-    font-size: 14px;
-    line-height: 1.2;
-    margin-top: 2px;
-  }}
   .a4-page.continuation .schedule-table thead {{
     display: none;
   }}
-  .schedule-table {{
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    background: var(--white);
-  }}
-  .col-time {{ width: 5.2em; }}
-  .col-location {{ width: 7.6em; }}
-  .schedule-table thead th {{
-    border: 1px solid var(--border-grey);
-    border-bottom: 0;
-    padding: 4px 6px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    text-align: left;
-    color: var(--cream);
-    background: var(--green);
-  }}
-  .sr-only {{
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }}
-  .time-col {{
-    background: var(--green);
-    color: var(--cream);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.05;
-    padding: 4px 5px;
-    border: 1px solid var(--border-grey);
-    text-align: left;
-    vertical-align: top;
-  }}
-  .event-col {{
-    border: 1px solid var(--border-grey);
-    padding: 3px 6px;
-    vertical-align: top;
-    background: var(--cream-bg);
-  }}
-  .location-col {{
-    width: 18%;
-    border: 1px solid var(--border-grey);
-    padding: 4px 5px;
-    vertical-align: top;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 700;
-    background: var(--cream-bg);
-  }}
-  .event-shell h3 {{
-    font-family: "Magnole", Georgia, serif;
-    font-weight: 400;
-    font-size: 18px;
-    line-height: 1.05;
-    margin: 0;
-    white-space: pre-line;
-  }}
-  .detail-lines {{
-    margin: 2px 0 0;
-    font-size: 12px;
-  }}
-  .detail-line {{ margin: 1px 0; }}
-  .event-note {{
-    margin: 2px 0 0;
-    font-size: 11px;
-    font-style: italic;
-  }}
-  .chair-note {{
-    display: block;
-    margin-left: -6px;
-    margin-right: -6px;
-    padding-left: 6px;
-    padding-right: 6px;
-    border-bottom: 1px solid var(--border-grey);
-    padding-bottom: 2px;
-    margin-bottom: 2px;
-  }}
-  .track-grid {{
-    margin-top: 3px;
-    display: table;
-    table-layout: fixed;
-    width: 100%;
-    border-spacing: 3px 0;
-  }}
-  .row-workshops-header .event-col {{
-    padding-bottom: 4px;
-  }}
-  .workshop-location-hint {{
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    font-size: 11px;
-  }}
-  .row-workshop-item .event-col {{
-    padding-top: 5px;
-    padding-bottom: 5px;
-  }}
-  .row-workshop-item .talk-presenter {{
-    margin-top: 2px;
-  }}
-  .row-workshop-item .talk-title {{
-    margin-top: 0;
-  }}
-  .track-row {{
-    display: table-row;
-  }}
-  .track-cell {{
-    display: table-cell;
-    vertical-align: top;
-    border-left: 1px solid var(--border-grey);
-    border-right: 1px solid var(--border-grey);
-    background: var(--cream-bg);
-    padding: 5px 6px;
-  }}
-  .track-row-header .track-cell {{
-    border-top: 1px solid var(--border-grey);
-    border-bottom: 1px solid var(--border-grey);
-  }}
-  .track-row:last-child .track-cell {{
-    border-bottom: 1px solid var(--border-grey);
-  }}
-  .row-parallel_sessions .track-cell,
-  .row-parallel_workshops .track-cell {{
-    background: var(--lilac);
-  }}
-  .row-parallel_sessions .track-row-header .track-cell,
-  .row-parallel_workshops .track-row-header .track-cell {{
-    background: var(--green);
-    color: var(--cream);
-  }}
-  .track-header-cell h4 {{
-    font-size: 13px;
-    line-height: 1.08;
-    margin: 0;
-  }}
-  .track-room {{
-    font-size: 12px;
-    font-weight: 700;
-    margin-top: 2px;
-  }}
-  .track-chair {{
-    display: block;
-    font-size: 11px;
-    font-style: italic;
-    margin-top: 3px;
-  }}
-  .talk-body {{
-    border-top: 1px solid var(--border-grey);
-  }}
-  .track-row-header + .track-row .talk-body {{
-    border-top: 0;
-  }}
-  .talk-list {{
-    margin: 4px 0 0;
-    padding: 0;
-    list-style: none;
-  }}
-  .talk-list li {{
-    margin-top: 4px;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-grey);
-  }}
-  .talk-list li:first-child {{
-    border-top: 0;
-    margin-top: 0;
-    padding-top: 0;
-  }}
-  .talk-presenter {{
-    font-size: 11px;
-    font-weight: 400;
-    line-height: 1.25;
-  }}
-  .talk-title {{
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.25;
-  }}
-  .plenary-list .talk-title {{
-    font-size: 11px;
-  }}
-  .row-event .event-col,
-  .row-event .location-col,
-  .row-keynote .event-col,
-  .row-keynote .location-col {{
-    background: var(--row-event);
-  }}
-  .row-break .event-col,
-  .row-break .location-col {{
-    background: var(--row-break);
-  }}
-  .row-plenary .event-col,
-  .row-plenary .location-col {{
-    background: var(--row-plenary);
-  }}
-  .row-parallel_workshops .event-col,
-  .row-parallel_workshops .location-col {{
-    background: var(--row-workshop);
-  }}
-  .row-parallel_sessions .event-col,
-  .row-parallel_sessions .location-col {{
-    background: var(--row-presentations);
-  }}
+{schedule_table_css(background_var="var(--cream-bg)")}
   @media print {{
     .schedule-header {{
       background: var(--green) !important;

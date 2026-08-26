@@ -450,6 +450,45 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — extracted shared single-page/two-side CSS)
+Same session. User asked about something mentioned in passing earlier ("three identical
+structures") — explained that `render_ltrs2026_booklet.py`'s single-page, two-side, and fold-card
+outputs each keep their own hand-duplicated copy of the schedule-table/track-grid CSS, and that
+this had already caused a real bug once (the fold-card Parallel Sessions panel regression, see
+the 2026-08-05 evening session log) plus ongoing double-editing pain (e.g. today's font-size and
+line-break changes both needed applying twice). Asked "So do we have needless duplication?" then
+"Can we fix it?" — confirmed yes for single-page/two-side specifically (fold-card has genuinely
+different layout constraints — landscape, narrower panels — so some of its divergence is real,
+not just copy-paste debt).
+
+- **Compared both CSS blocks property-by-property** before touching anything, to separate what's
+  truly identical from what's a legitimate, deliberate difference. Genuinely identical: the whole
+  `.schedule-header`/banner block, `.schedule-table`/`.col-time`/`.col-location`/thead styling,
+  `.sr-only`, `.time-col`, `.event-shell h3`, `.detail-lines`/`.detail-line`/`.event-note`/
+  `.chair-note`, the entire `.track-grid`/`.track-cell`/`.talk-list` block, and the row-type color
+  mapping. Genuinely different: the page container itself (`.a4-page` vs `.single-page` — two-side
+  is flex-column with `page-break-after`, single-page isn't), `.page-footer` (two-side centers via
+  flex auto-margins in the leftover page space, single-page just sits in normal flow), two-side's
+  extra `.a4-page.continuation .schedule-table thead` rule and `@media print`/`@media screen`
+  blocks, single-page's own separate `@media screen and (max-width: 900px)` responsive query and
+  `@media print` rule — and the `--cream` vs `--cream-bg` distinction from the beige-paper work,
+  since single-page never got that feature.
+- **New `schedule_table_css(background_var: str = "var(--cream)") -> str`** holds everything in
+  the "genuinely identical" list above. `.event-col`/`.location-col`/`.track-cell` — the three
+  rules that need to differ for the beige-paper PDF — take `background_var` as a parameter instead
+  of hardcoding a color, so two-side calls `schedule_table_css(background_var="var(--cream-bg)")`
+  and single-page calls it with the default `var(--cream)`. Everything else in the function is
+  identical text for both callers. fold-card is untouched — it still has its own separate
+  `fold_card_css()`, deliberately not merged into this, since unifying it would fight its real
+  layout differences rather than remove actual duplication.
+- **Verified the refactor was a pure no-op**, not just assumed from reading the diff: backed up
+  the four generated HTML files, regenerated the full pipeline, and diffed old vs new byte-for-
+  byte. Fold-card came back byte-identical. Single-page and two-side differed only in *where*
+  a few rules sit in the CSS (e.g. `.sr-only` moved position, `.a4-page.continuation .schedule-
+  table thead` moved position, a stray blank line and a code comment shifted) — no property
+  values, selectors, or content changed anywhere. Then rendered the regenerated two-side PDF to a
+  PNG and visually confirmed no regression (colors, borders, fonts, layout all intact).
+
 ## Session Log (2026-08-20, cont'd — manual line breaks in event titles)
 Same session. User showed a screenshot of an Excel cell where they'd used Alt+Enter to put an
 event title on two lines ("Keynote" / "Navigating Without a Compass: ..."), and asked whether
