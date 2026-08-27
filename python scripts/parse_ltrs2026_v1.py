@@ -78,33 +78,104 @@ def clean(value: Any) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def build_hyperlink_map(input_file: Path, sheet_name: str) -> Dict[int, Dict[str, str]]:
-    """Map Excel row number -> {column_name: url} for every hyperlinked cell.
+def extract_runs(cell: Any) -> List[tuple[str, Dict[str, bool]]]:
+    """Return [(text_segment, {"bold", "italic", "underline"}), ...] for a cell.
 
-    pandas.read_excel() only ever gives cell values, never hyperlink metadata,
-    so this is a separate direct read of the same file via openpyxl (which
-    already exposes cell.hyperlink) purely to build this lookup. Keyed by
-    the real Excel row number so it lines up with the source_row bookkeeping
-    already used throughout this file (row 1 is the header, so data starts
-    at row 2).
+    Excel exposes character-level formatting two ways: uniform whole-cell
+    formatting via the cell's own .font, or per-run formatting (a
+    CellRichText value) when only part of the text is styled differently.
+    Handles both, normalising each segment's whitespace the same way
+    clean() does (collapse runs of spaces/tabs, keep line breaks) without
+    stripping segment edges — stripping each run individually would eat the
+    space between two adjacent runs (e.g. "Chaired by: " + "Dr Jane Smith").
+    Colour and font family are deliberately never read here — only bold/
+    italic/underline, per the brand's strict colour/font rules.
     """
-    workbook = openpyxl.load_workbook(input_file, data_only=True)
+    from openpyxl.cell.rich_text import CellRichText, TextBlock
+
+    def normalise(text: str) -> str:
+        text = text.replace(" ", " ")
+        return "\n".join(re.sub(r"[ \t]+", " ", line) for line in text.splitlines())
+
+    value = cell.value
+    if isinstance(value, CellRichText):
+        runs: List[tuple[str, Dict[str, bool]]] = []
+        for part in value:
+            if isinstance(part, TextBlock):
+                font = part.font
+                underline = bool(font.u) and str(font.u).lower() != "none"
+                runs.append((normalise(str(part.text)), {
+                    "bold": bool(font.b), "italic": bool(font.i), "underline": underline,
+                }))
+            else:
+                runs.append((normalise(str(part)), {"bold": False, "italic": False, "underline": False}))
+    else:
+        text = "" if value is None else normalise(str(value))
+        if not text:
+            return []
+        font = cell.font
+        underline = bool(font.underline) and str(font.underline).lower() != "none"
+        runs = [(text, {"bold": bool(font.bold), "italic": bool(font.italic), "underline": underline})]
+
+    if runs:
+        first_text, first_flags = runs[0]
+        runs[0] = (first_text.lstrip(" \t"), first_flags)
+        last_text, last_flags = runs[-1]
+        runs[-1] = (last_text.rstrip(" \t"), last_flags)
+    return [(text, flags) for text, flags in runs if text]
+
+
+def build_cell_metadata_map(input_file: Path, sheet_name: str) -> Dict[int, Dict[str, dict]]:
+    """Map Excel row number -> {column_name: {"url", "runs"}} for cells that
+    carry a hyperlink and/or bold/italic/underline formatting.
+
+    pandas.read_excel() only ever gives cell values, never hyperlink or rich
+    formatting metadata, so this is a separate direct read of the same file
+    via openpyxl purely to build this lookup — the existing pandas-based
+    parsing below is untouched. Keyed by the real Excel row number so it
+    lines up with the source_row bookkeeping already used throughout this
+    file (row 1 is the header, so data starts at row 2). Sparse by design:
+    a cell with neither a link nor any formatting has no entry at all, so
+    the vast majority of ordinary cells add nothing to this map.
+    """
+    workbook = openpyxl.load_workbook(input_file, data_only=True, rich_text=True)
     worksheet = workbook[sheet_name]
     headers = {cell.column: cell.value for cell in worksheet[1]}
 
-    links: Dict[int, Dict[str, str]] = {}
+    metadata: Dict[int, Dict[str, dict]] = {}
     for row in worksheet.iter_rows(min_row=2):
         for cell in row:
-            if cell.hyperlink is not None and cell.hyperlink.target:
-                column_name = headers.get(cell.column)
-                if column_name:
-                    links.setdefault(cell.row, {})[column_name] = cell.hyperlink.target
-    return links
+            column_name = headers.get(cell.column)
+            if not column_name:
+                continue
+            url = cell.hyperlink.target if (cell.hyperlink is not None and cell.hyperlink.target) else None
+            runs = extract_runs(cell)
+            has_formatting = any(flags["bold"] or flags["italic"] or flags["underline"] for _, flags in runs)
+            if url or has_formatting:
+                metadata.setdefault(cell.row, {})[column_name] = {"url": url, "runs": runs}
+    return metadata
 
 
 def link_for(row: Dict[str, Any], column: str) -> Optional[str]:
     """The hyperlink URL (if any) attached to `row`'s cell in `column`."""
-    return (row.get("_links") or {}).get(column) or None
+    meta = (row.get("_meta") or {}).get(column)
+    return meta.get("url") if meta else None
+
+
+def runs_for(row: Dict[str, Any], column: str) -> Optional[List[Dict[str, Any]]]:
+    """Formatted runs (if any carry real bold/italic/underline) for a cell.
+
+    Returns None when the cell has no meaningful character-level formatting
+    (including when it has none at all), so callers can cheaply fall back to
+    the plain cleaned text instead of building a run-by-run HTML fragment.
+    """
+    meta = (row.get("_meta") or {}).get(column)
+    if not meta:
+        return None
+    runs = meta.get("runs") or []
+    if not any(flags["bold"] or flags["italic"] or flags["underline"] for _, flags in runs):
+        return None
+    return [{"text": text, **flags} for text, flags in runs]
 
 
 def fmt_time(value: Any) -> str:
@@ -145,9 +216,9 @@ def is_block_header(row: Dict[str, Any]) -> bool:
     return bool(fmt_time(row.get("Start")) and clean(row.get("Event")))
 
 
-def row_to_dict(row: Any, links: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def row_to_dict(row: Any, meta: Optional[Dict[str, dict]] = None) -> Dict[str, Any]:
     base = {k: row.get(k, "") for k in ["Start", "Duration", "End", "Event", "Location", "Presenter", "Chair"]}
-    base["_links"] = links or {}
+    base["_meta"] = meta or {}
     return base
 
 
@@ -170,12 +241,16 @@ def parse_standard_event(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
         "duration_minutes": clean(row.get("Duration")),
         "title": clean(row.get("Event")),
         "title_url": link_for(row, "Event"),
+        "title_runs": runs_for(row, "Event"),
         "location": clean(row.get("Location")),
         "location_url": link_for(row, "Location"),
+        "location_runs": runs_for(row, "Location"),
         "presenter": clean(row.get("Presenter")),
         "presenter_url": link_for(row, "Presenter"),
+        "presenter_runs": runs_for(row, "Presenter"),
         "chair": clean(row.get("Chair")),
         "chair_url": link_for(row, "Chair"),
+        "chair_runs": runs_for(row, "Chair"),
         "source_row": i + 2,  # Excel row number, assuming header row is row 1
     }
     return item, i + 1
@@ -191,8 +266,10 @@ def parse_workshop_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
         "duration_minutes": clean(header.get("Duration")),
         "title": clean(header.get("Event")),
         "title_url": link_for(header, "Event"),
+        "title_runs": runs_for(header, "Event"),
         "chair": header_chair or clean(header.get("Presenter")),
         "chair_url": link_for(header, "Chair") if header_chair else link_for(header, "Presenter"),
+        "chair_runs": runs_for(header, "Chair") if header_chair else runs_for(header, "Presenter"),
         "items": [],
         "source_row": i + 2,
     }
@@ -208,10 +285,13 @@ def parse_workshop_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
             block["items"].append({
                 "title": title,
                 "title_url": link_for(row, "Event"),
+                "title_runs": runs_for(row, "Event"),
                 "room": room,
                 "room_url": link_for(row, "Location"),
+                "room_runs": runs_for(row, "Location"),
                 "presenter": presenter,
                 "presenter_url": link_for(row, "Presenter"),
+                "presenter_runs": runs_for(row, "Presenter"),
                 "source_row": i + 2,
             })
         i += 1
@@ -229,10 +309,13 @@ def parse_plenary_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, A
         "duration_minutes": clean(header.get("Duration")),
         "title": clean(header.get("Event")),
         "title_url": link_for(header, "Event"),
+        "title_runs": runs_for(header, "Event"),
         "location": clean(header.get("Location")),
         "location_url": link_for(header, "Location"),
+        "location_runs": runs_for(header, "Location"),
         "chair": header_chair or clean(header.get("Presenter")),
         "chair_url": link_for(header, "Chair") if header_chair else link_for(header, "Presenter"),
+        "chair_runs": runs_for(header, "Chair") if header_chair else runs_for(header, "Presenter"),
         "items": [],
         "source_row": i + 2,
     }
@@ -247,8 +330,10 @@ def parse_plenary_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, A
             block["items"].append({
                 "title": title,
                 "title_url": link_for(row, "Event"),
+                "title_runs": runs_for(row, "Event"),
                 "presenters": presenters,
                 "presenters_url": link_for(row, "Presenter"),
+                "presenters_runs": runs_for(row, "Presenter"),
                 "source_row": i + 2,
             })
         i += 1
@@ -300,10 +385,16 @@ def parse_presentation_sessions(rows: List[Dict[str, Any]], i: int) -> tuple[Dic
                 "session_title": event_text,
                 "theme": get_theme_from_session_title(event_text),
                 "theme_url": link_for(row, "Event"),
+                # Whole-cell runs, same simplification as theme_url above — a
+                # formatted/linked cell doesn't get sliced down to just the
+                # substring after the colon, only the theme's plain text does.
+                "theme_runs": runs_for(row, "Event"),
                 "room": location,
                 "room_url": link_for(row, "Location"),
+                "room_runs": runs_for(row, "Location"),
                 "chair": chair or presenter,
                 "chair_url": link_for(row, "Chair") if chair else link_for(row, "Presenter"),
+                "chair_runs": runs_for(row, "Chair") if chair else runs_for(row, "Presenter"),
                 "talks": [],
                 "source_row": i + 2,
             }
@@ -312,8 +403,10 @@ def parse_presentation_sessions(rows: List[Dict[str, Any]], i: int) -> tuple[Dic
                 current_session["talks"].append({
                     "title": event_text,
                     "title_url": link_for(row, "Event"),
+                    "title_runs": runs_for(row, "Event"),
                     "presenter": presenter,
                     "presenter_url": link_for(row, "Presenter"),
+                    "presenter_runs": runs_for(row, "Presenter"),
                     "source_row": i + 2,
                 })
 
@@ -360,11 +453,11 @@ def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
             df[col] = ""
     df = df[expected]
 
-    hyperlinks = build_hyperlink_map(input_file, sheet_name)
+    cell_metadata = build_cell_metadata_map(input_file, sheet_name)
     # Row 1 is the header, so the first data row (DataFrame index 0) is Excel row 2 —
     # the same convention every source_row already uses throughout this file.
     rows = [
-        row_to_dict(r, hyperlinks.get(idx + 2))
+        row_to_dict(r, cell_metadata.get(idx + 2))
         for idx, (_, r) in enumerate(df.iterrows())
     ]
 

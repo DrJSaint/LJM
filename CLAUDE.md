@@ -450,6 +450,57 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — bold/italic/underline carried through from Excel)
+Same session, right after hyperlinks. User asked to detect basic character-level formatting too
+(bold/italic/underline), including formatting applied to only *part* of a cell's text — explicitly
+not colour or font, since "we have our strict colour and font rules." First corrected a
+misunderstanding: the existing italic on "Chaired by:" lines isn't detected from the source at
+all — it's a fixed CSS style baked into the template regardless of what's in the cell.
+
+- **Confirmed feasibility before committing to it**, since this is a materially bigger change
+  than the hyperlink feature (a different data model — per-character-run spans, not one
+  attribute per cell) rather than assuming it would just work. Tested `openpyxl.load_workbook(...,
+  rich_text=True)` (openpyxl 3.1.5, already the installed version) against synthetic cells: a
+  cell with *mixed* formatting (e.g. "Dr Jane Smith" italic + "Prof John Doe" bold+underline in
+  the same cell) comes back as a `CellRichText` — a sequence of plain strings and `TextBlock`
+  objects, each with its own `InlineFont` (`.b`, `.i`, `.u` — deliberately never reading `.color`
+  or `.rFont`). A cell with *uniform* whole-cell formatting comes back as a plain string instead,
+  with the formatting on the cell's own `.font.bold`/`.italic`/`.underline` — a genuinely
+  different code path that needed handling separately, confirmed by testing both cases explicitly
+  rather than assuming one code path would cover both.
+- **`parse_ltrs2026_v1.py`:** `build_hyperlink_map()` became `build_cell_metadata_map()` — one
+  `openpyxl.load_workbook(rich_text=True)` read now covers both hyperlinks and formatting (not a
+  third separate file read). New `extract_runs(cell)` returns `[(text_segment, {"bold",
+  "italic", "underline"}), ...]` for either representation, normalising whitespace per-segment the
+  same way `clean()` does but *without* stripping each segment's edges — stripping every segment
+  individually would eat the space between two adjacent runs (e.g. "Chaired by: " next to "Dr Jane
+  Smith" would collide into "Chaired by:Dr Jane Smith"). Only the very first segment's leading
+  whitespace and the very last segment's trailing whitespace are stripped, matching what a single
+  `clean()` call on the joined text would do. `row_to_dict()`'s `_links` field became the more
+  general `_meta` (`{"url", "runs"}` per column); new `runs_for(row, column)` returns `None`
+  whenever a cell has no actual bold/italic/underline (the vast majority), so nothing downstream
+  needs to special-case the common case. Every block-building function gained a matching
+  `<field>_runs` key alongside each existing `<field>_url` key, with the same Chair-or-Presenter
+  fallback logic already used for `_url` applied consistently to `_runs` too.
+- **`render_ltrs2026_booklet.py`:** `link_text()` gained an optional `runs` parameter — when
+  present, builds the HTML by wrapping each run's escaped text in `<strong>`/`<em>`/`<u>` per its
+  flags (nested, e.g. `<u><strong>text</strong></u>` for bold+underline together), *then* wraps
+  the whole result in `<a href>` if the cell also had a link — composing correctly when a cell
+  happens to carry both. Threaded `runs=...` through every one of the ~20 `link_text()` call sites
+  touched for the hyperlink feature just before this, plus `build_onepager_rows()` carrying the
+  new `_runs` fields alongside `_url` the same way. No new CSS needed — `<strong>`/`<em>`/`<u>`
+  render via plain browser defaults, which is exactly right here since colour/font are explicitly
+  out of scope.
+- **Verified with synthetic and real data.** Built test cells covering mixed-run formatting
+  (italic + bold+underline in one cell) and whole-cell formatting, confirmed both extract with the
+  correct flags in the parsed JSON, then rendered a full pipeline test to PDF and visually
+  confirmed each renders correctly (italic, bold, bold+underline nested correctly) with zero
+  colour/font drift. Re-ran against the real `input/LTRS2026 schedule.xlsx` (which had changed
+  again since the hyperlink work — the user had been actively editing it) and confirmed real bold
+  section headers and a real italic note rendered correctly alongside the existing hyperlink,
+  including a cell that has *both* a link and underline formatting at once, composing correctly
+  with no visual regression anywhere else in the document.
+
 ## Session Log (2026-08-20, cont'd — Excel hyperlinks carry through to rendered output)
 Same session. User had added real hyperlinks to their workbook (a YouTube link on a workshop
 title and on its presenter name) and asked whether links could be detected "anywhere" rather than

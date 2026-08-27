@@ -28,6 +28,11 @@ hyperlink, right-click → Link) carries through to every output — the text re
 clickable link in the HTML and (since the exported PDF is generated straight from that HTML) in
 the PDF too. No setup needed; it's detected automatically per cell.
 
+Bold, italic, and underline formatting in those same columns also carries through — including
+formatting applied to only part of a cell's text (e.g. one word in bold within an otherwise plain
+sentence). Colour and font are deliberately never picked up from the source, only bold/italic/
+underline, to keep the brand's fixed colour/font rules intact.
+
 Outputs written to `output/`:
 
 | File | Description |
