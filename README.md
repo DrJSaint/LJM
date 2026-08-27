@@ -23,6 +23,11 @@ If the target sheet doesn't look like an LTRS schedule (none of the expected col
 Duration, End, Event, Location, Presenter, Chair — are present) or has no usable rows, the
 pipeline fails with a specific error message instead of silently generating a blank schedule.
 
+A hyperlink on any cell in the Event, Location, Presenter, or Chair columns (a normal Excel
+hyperlink, right-click → Link) carries through to every output — the text renders as a real,
+clickable link in the HTML and (since the exported PDF is generated straight from that HTML) in
+the PDF too. No setup needed; it's detected automatically per cell.
+
 Outputs written to `output/`:
 
 | File | Description |

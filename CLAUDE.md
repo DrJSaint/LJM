@@ -450,6 +450,59 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — Excel hyperlinks carry through to rendered output)
+Same session. User had added real hyperlinks to their workbook (a YouTube link on a workshop
+title and on its presenter name) and asked whether links could be detected "anywhere" rather than
+needing to specify which columns in advance.
+
+- **Investigated the real file first, not a synthetic guess.** `pandas.read_excel()` only ever
+  returns cell *values* — hyperlink metadata isn't exposed through it at all, regardless of engine.
+  Confirmed by opening the actual `input/LTRS2026 schedule.xlsx` directly via `openpyxl` and
+  scanning every cell for `cell.hyperlink`: exactly 2 hyperlinked cells existed, both the same
+  YouTube URL — one on a workshop item's Event (title) cell, one on its Presenter cell. This also
+  incidentally caught that the user had renamed the sheet to `LTRS2026 Schedule` since the
+  first-sheet-by-default fix — confirming that change was worth doing when it was.
+- **`parse_ltrs2026_v1.py`:** new `build_hyperlink_map(input_file, sheet_name)` does a second,
+  separate `openpyxl.load_workbook()` read of the same file purely to build a
+  `{excel_row: {column_name: url}}` lookup (pandas's own read is left untouched). `row_to_dict()`
+  now carries this as a `_links` dict alongside the usual field values, and a new `link_for(row,
+  column)` helper reads from it. Every block-building function (`parse_standard_event`,
+  `parse_workshop_block`, `parse_plenary_block`, `parse_presentation_sessions`) now attaches a
+  matching `<field>_url` key (`title_url`, `location_url`, `presenter_url`, `chair_url`, `room_url`,
+  `theme_url`, `presenters_url`) wherever that field's source column had a link — always present,
+  defaulting to `None`, so downstream code has one consistent shape to check rather than needing
+  to know which fields ever carry a URL. Where a display field already has a fallback (e.g. `chair
+  = Chair or Presenter`), the URL fallback mirrors it — whichever column actually supplied the
+  text is the one whose link gets used.
+- **`render_ltrs2026_booklet.py`:** new `link_text(value, url)` — the `e()`-escaped text, wrapped
+  in `<a href="..." target="_blank" rel="noopener">` when a URL is given, unwrapped otherwise.
+  Threaded through every place a linkable field gets rendered: `build_onepager_rows()` (carries
+  `_url` fields into the row/track/talk dicts it builds — this also required changing `details`
+  from a flat `list[str]` to `list[{"text", "url"}]`, since a "Chair: ..." detail line needed to
+  carry its own URL), `render_talk_cell()`, `render_track_grid()`, `render_track_stack()`,
+  `render_event_cell()` (all four branches), and — the one that actually mattered for the user's
+  real example — the workshop-item-row path inside `render_schedule_rows()`. That last one is a
+  **separate, direct rendering path from `render_track_grid()`/`render_talk_cell()`** (each
+  workshop item becomes its own `<tr>`, not a nested track-grid cell — the `.row-workshop-item`
+  CSS class was the tell), so the first pass at this feature built full parse+render plumbing but
+  the actual link never showed up anywhere, because this one code path still called `e()` directly.
+  Found via `grep -c 'href="https://youtu.be'` returning `0` on all three outputs immediately
+  after the first "complete" pass — didn't just trust the code, checked the actual output.
+- **Styling:** added `.event-shell a, .track-cell a, .event-col a, .location-col a { color:
+  inherit; text-decoration: underline; }` to `schedule_table_css()` (plus `.track-stack-item a`
+  in `fold_card_css()`, since fold-card renders through the same shared functions) — link text
+  inherits whatever color it would have had anyway (important since some of it sits on dark
+  green/lilac backgrounds where default link-blue would clash badly) and is marked out only by an
+  underline.
+- **Verified thoroughly:** `grep -c "<a "` confirmed exactly 2 anchor tags across the whole
+  two-side document (matching the 2 real hyperlinks, no stray wrapping on ordinary titles);
+  Playwright confirmed the rendered `<a>` has the correct `href` and a real clickable bounding box;
+  a raw byte scan of the exported PDF confirmed genuine `/Subtype /Link` + `/URI` annotations (2 of
+  them) — Playwright's PDF export carries real clickable links through from `<a href>` in the
+  source HTML, not just visually-styled text, so this works in the PDF too, not only the HTML.
+  Rendered the full page to a PNG and visually confirmed only the two real links are underlined,
+  everything else is unaffected.
+
 ## Session Log (2026-08-20, cont'd — extracted shared single-page/two-side CSS)
 Same session. User asked about something mentioned in passing earlier ("three identical
 structures") — explained that `render_ltrs2026_booklet.py`'s single-page, two-side, and fold-card

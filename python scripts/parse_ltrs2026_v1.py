@@ -37,6 +37,7 @@ import re
 
 try:
     import pandas as pd
+    import openpyxl
 except ImportError as exc:
     raise SystemExit(
         "Missing dependency: pandas. Install with: pip install pandas openpyxl"
@@ -77,6 +78,35 @@ def clean(value: Any) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def build_hyperlink_map(input_file: Path, sheet_name: str) -> Dict[int, Dict[str, str]]:
+    """Map Excel row number -> {column_name: url} for every hyperlinked cell.
+
+    pandas.read_excel() only ever gives cell values, never hyperlink metadata,
+    so this is a separate direct read of the same file via openpyxl (which
+    already exposes cell.hyperlink) purely to build this lookup. Keyed by
+    the real Excel row number so it lines up with the source_row bookkeeping
+    already used throughout this file (row 1 is the header, so data starts
+    at row 2).
+    """
+    workbook = openpyxl.load_workbook(input_file, data_only=True)
+    worksheet = workbook[sheet_name]
+    headers = {cell.column: cell.value for cell in worksheet[1]}
+
+    links: Dict[int, Dict[str, str]] = {}
+    for row in worksheet.iter_rows(min_row=2):
+        for cell in row:
+            if cell.hyperlink is not None and cell.hyperlink.target:
+                column_name = headers.get(cell.column)
+                if column_name:
+                    links.setdefault(cell.row, {})[column_name] = cell.hyperlink.target
+    return links
+
+
+def link_for(row: Dict[str, Any], column: str) -> Optional[str]:
+    """The hyperlink URL (if any) attached to `row`'s cell in `column`."""
+    return (row.get("_links") or {}).get(column) or None
+
+
 def fmt_time(value: Any) -> str:
     """Convert Excel/pandas time values into HH:MM strings."""
     if value is None:
@@ -115,8 +145,10 @@ def is_block_header(row: Dict[str, Any]) -> bool:
     return bool(fmt_time(row.get("Start")) and clean(row.get("Event")))
 
 
-def row_to_dict(row: Any) -> Dict[str, Any]:
-    return {k: row.get(k, "") for k in ["Start", "Duration", "End", "Event", "Location", "Presenter", "Chair"]}
+def row_to_dict(row: Any, links: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    base = {k: row.get(k, "") for k in ["Start", "Duration", "End", "Event", "Location", "Presenter", "Chair"]}
+    base["_links"] = links or {}
+    return base
 
 
 def get_theme_from_session_title(title: str) -> str:
@@ -137,9 +169,13 @@ def parse_standard_event(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
         "end": fmt_time(row.get("End")),
         "duration_minutes": clean(row.get("Duration")),
         "title": clean(row.get("Event")),
+        "title_url": link_for(row, "Event"),
         "location": clean(row.get("Location")),
+        "location_url": link_for(row, "Location"),
         "presenter": clean(row.get("Presenter")),
+        "presenter_url": link_for(row, "Presenter"),
         "chair": clean(row.get("Chair")),
+        "chair_url": link_for(row, "Chair"),
         "source_row": i + 2,  # Excel row number, assuming header row is row 1
     }
     return item, i + 1
@@ -147,13 +183,16 @@ def parse_standard_event(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
 
 def parse_workshop_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, Any], int]:
     header = rows[i]
+    header_chair = clean(header.get("Chair"))
     block = {
         "type": "workshop_block",
         "start": fmt_time(header.get("Start")),
         "end": fmt_time(header.get("End")),
         "duration_minutes": clean(header.get("Duration")),
         "title": clean(header.get("Event")),
-        "chair": clean(header.get("Chair")) or clean(header.get("Presenter")),
+        "title_url": link_for(header, "Event"),
+        "chair": header_chair or clean(header.get("Presenter")),
+        "chair_url": link_for(header, "Chair") if header_chair else link_for(header, "Presenter"),
         "items": [],
         "source_row": i + 2,
     }
@@ -168,8 +207,11 @@ def parse_workshop_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
         if title or room or presenter:
             block["items"].append({
                 "title": title,
+                "title_url": link_for(row, "Event"),
                 "room": room,
+                "room_url": link_for(row, "Location"),
                 "presenter": presenter,
+                "presenter_url": link_for(row, "Presenter"),
                 "source_row": i + 2,
             })
         i += 1
@@ -179,14 +221,18 @@ def parse_workshop_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, 
 
 def parse_plenary_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, Any], int]:
     header = rows[i]
+    header_chair = clean(header.get("Chair"))
     block = {
         "type": "plenary_block",
         "start": fmt_time(header.get("Start")),
         "end": fmt_time(header.get("End")),
         "duration_minutes": clean(header.get("Duration")),
         "title": clean(header.get("Event")),
+        "title_url": link_for(header, "Event"),
         "location": clean(header.get("Location")),
-        "chair": clean(header.get("Chair")) or clean(header.get("Presenter")),
+        "location_url": link_for(header, "Location"),
+        "chair": header_chair or clean(header.get("Presenter")),
+        "chair_url": link_for(header, "Chair") if header_chair else link_for(header, "Presenter"),
         "items": [],
         "source_row": i + 2,
     }
@@ -200,7 +246,9 @@ def parse_plenary_block(rows: List[Dict[str, Any]], i: int) -> tuple[Dict[str, A
         if title or presenters:
             block["items"].append({
                 "title": title,
+                "title_url": link_for(row, "Event"),
                 "presenters": presenters,
+                "presenters_url": link_for(row, "Presenter"),
                 "source_row": i + 2,
             })
         i += 1
@@ -251,8 +299,11 @@ def parse_presentation_sessions(rows: List[Dict[str, Any]], i: int) -> tuple[Dic
             current_session = {
                 "session_title": event_text,
                 "theme": get_theme_from_session_title(event_text),
+                "theme_url": link_for(row, "Event"),
                 "room": location,
+                "room_url": link_for(row, "Location"),
                 "chair": chair or presenter,
+                "chair_url": link_for(row, "Chair") if chair else link_for(row, "Presenter"),
                 "talks": [],
                 "source_row": i + 2,
             }
@@ -260,7 +311,9 @@ def parse_presentation_sessions(rows: List[Dict[str, Any]], i: int) -> tuple[Dic
             if current_session and (event_text or presenter):
                 current_session["talks"].append({
                     "title": event_text,
+                    "title_url": link_for(row, "Event"),
                     "presenter": presenter,
+                    "presenter_url": link_for(row, "Presenter"),
                     "source_row": i + 2,
                 })
 
@@ -307,7 +360,13 @@ def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
             df[col] = ""
     df = df[expected]
 
-    rows = [row_to_dict(r) for _, r in df.iterrows()]
+    hyperlinks = build_hyperlink_map(input_file, sheet_name)
+    # Row 1 is the header, so the first data row (DataFrame index 0) is Excel row 2 —
+    # the same convention every source_row already uses throughout this file.
+    rows = [
+        row_to_dict(r, hyperlinks.get(idx + 2))
+        for idx, (_, r) in enumerate(df.iterrows())
+    ]
 
     programme: List[Dict[str, Any]] = []
     i = 0

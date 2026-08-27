@@ -64,6 +64,18 @@ def e(value: object) -> str:
     return escape(str(value), quote=True)
 
 
+def link_text(value: object, url: str | None = None) -> str:
+    """Escaped text, wrapped in a link when the source Excel cell had one.
+
+    A hyperlink covers the whole cell in Excel, so this always wraps the
+    entire escaped text rather than a substring of it.
+    """
+    escaped = e(value)
+    if not url or not escaped:
+        return escaped
+    return f'<a href="{e(url)}" target="_blank" rel="noopener">{escaped}</a>'
+
+
 def time_range(block: dict) -> str:
     start = block.get("start", "")
     end = block.get("end", "")
@@ -127,17 +139,18 @@ def build_onepager_rows(programme: list[dict]) -> list[dict]:
             elif "keynote" in lower:
               label = "Keynote"
               row_kind = "keynote"
-            details: list[str] = []
+            details: list[dict] = []
             if block.get("presenter"):
-                details.append(str(block["presenter"]))
+                details.append({"text": str(block["presenter"]), "url": block.get("presenter_url")})
             if block.get("chair"):
-                details.append(f"Chair: {block['chair']}")
+                details.append({"text": f"Chair: {block['chair']}", "url": block.get("chair_url")})
 
             rows.append({
                 "kind": row_kind,
                 "label": label,
                 "time": time_text,
                 "title": title,
+                "title_url": block.get("title_url"),
                 "details": details,
                 "location": block.get("location", ""),
             })
@@ -149,16 +162,20 @@ def build_onepager_rows(programme: list[dict]) -> list[dict]:
                 "label": "Parallel workshops",
                 "time": time_text,
                 "title": block.get("title", "Parallel Workshops"),
+                "title_url": block.get("title_url"),
             "location": "See tracks",
                 "chair": block.get("chair", ""),
                 "tracks": [
                     {
                         "title": item.get("title", "Workshop"),
+                        "title_url": item.get("title_url"),
                         "room": item.get("room", ""),
+                        "room_url": item.get("room_url"),
                         "chair": "",
                         "talks": [
                             {
                                 "presenter": item.get("presenter", ""),
+                                "presenter_url": item.get("presenter_url"),
                                 "title": "",
                             }
                         ],
@@ -172,15 +189,19 @@ def build_onepager_rows(programme: list[dict]) -> list[dict]:
             for item in block.get("items", []):
                 talks.append({
                     "presenter": item.get("presenters", ""),
+                    "presenter_url": item.get("presenters_url"),
                     "title": item.get("title", ""),
+                    "title_url": item.get("title_url"),
                 })
             rows.append({
                 "kind": "plenary",
                 "label": "Plenary",
                 "time": time_text,
                 "title": block.get("title", "Plenary Session"),
+                "title_url": block.get("title_url"),
                 "location": block.get("location", ""),
                 "chair": block.get("chair", ""),
+                "chair_url": block.get("chair_url"),
                 "talks": talks,
             })
 
@@ -195,12 +216,17 @@ def build_onepager_rows(programme: list[dict]) -> list[dict]:
                 "tracks": [
                     {
                         "title": session.get("theme", "Session"),
+                        "title_url": session.get("theme_url"),
                         "room": session.get("room", ""),
+                        "room_url": session.get("room_url"),
                         "chair": session.get("chair", ""),
+                        "chair_url": session.get("chair_url"),
                         "talks": [
                             {
                                 "presenter": talk.get("presenter", ""),
+                                "presenter_url": talk.get("presenter_url"),
                                 "title": talk.get("title", ""),
+                                "title_url": talk.get("title_url"),
                             }
                             for talk in session.get("talks", [])
                         ],
@@ -218,8 +244,8 @@ def render_talk_cell(talk: dict | None) -> str:
 
   presenter = str(talk.get("presenter", "")).strip()
   title = str(talk.get("title", "")).strip()
-  title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
-  presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+  title_html = f"<div class=\"talk-title\">{link_text(title, talk.get('title_url'))}</div>" if title else ""
+  presenter_html = f"<div class=\"talk-presenter\">{link_text(presenter, talk.get('presenter_url'))}</div>" if presenter else ""
   return f'<div class="track-cell talk-cell"><div class="talk-body">{title_html}{presenter_html}</div></div>'
 
 
@@ -233,11 +259,11 @@ def render_track_grid(tracks: list[dict]) -> str:
   for track in tracks:
     chair_html = ""
     if track.get("chair"):
-      chair_html = f"<div class=\"track-chair\">Chaired by: {e(track.get('chair', ''))}</div>"
+      chair_html = f"<div class=\"track-chair\">Chaired by: {link_text(track.get('chair', ''), track.get('chair_url'))}</div>"
     header_cells += f"""
     <div class="track-cell track-header-cell">
-      <h4>{e(track.get('title', 'Track'))}</h4>
-      <div class="track-room">{e(track.get('room', ''))}</div>
+      <h4>{link_text(track.get('title', 'Track'), track.get('title_url'))}</h4>
+      <div class="track-room">{link_text(track.get('room', ''), track.get('room_url'))}</div>
       {chair_html}
     </div>
     """
@@ -270,21 +296,21 @@ def render_track_stack(tracks: list[dict]) -> str:
   for track in tracks:
     chair_html = ""
     if track.get("chair"):
-      chair_html = f"<div class=\"track-stack-chair\">Chaired by: {e(track.get('chair', ''))}</div>"
+      chair_html = f"<div class=\"track-stack-chair\">Chaired by: {link_text(track.get('chair', ''), track.get('chair_url'))}</div>"
 
     talks_html = ""
     for talk in track.get("talks", []):
       presenter = str(talk.get("presenter", "")).strip()
       title = str(talk.get("title", "")).strip()
-      title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
-      presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+      title_html = f"<div class=\"talk-title\">{link_text(title, talk.get('title_url'))}</div>" if title else ""
+      presenter_html = f"<div class=\"talk-presenter\">{link_text(presenter, talk.get('presenter_url'))}</div>" if presenter else ""
       talks_html += f"<li>{title_html}{presenter_html}</li>"
 
     items_html += f"""
     <div class="track-stack-item">
       <div class="track-stack-head">
-        <span class="track-stack-title">{e(track.get('title', 'Track'))}</span>
-        <span class="track-stack-room">{e(track.get('room', ''))}</span>
+        <span class="track-stack-title">{link_text(track.get('title', 'Track'), track.get('title_url'))}</span>
+        <span class="track-stack-room">{link_text(track.get('room', ''), track.get('room_url'))}</span>
       </div>
       {chair_html}
       <ul class="track-stack-talks">{talks_html}</ul>
@@ -300,7 +326,7 @@ def render_event_cell(row: dict, compact: bool = False) -> str:
     if kind == "parallel_workshops":
         return f"""
         <div class="event-shell">
-          <h3>{e(row.get('title', ''))}</h3>
+          <h3>{link_text(row.get('title', ''), row.get('title_url'))}</h3>
         </div>
         """
 
@@ -309,7 +335,7 @@ def render_event_cell(row: dict, compact: bool = False) -> str:
         grid_html = render_track_stack(tracks) if compact else render_track_grid(tracks)
         return f"""
         <div class="event-shell">
-          <h3>{e(row.get('title', ''))}</h3>
+          <h3>{link_text(row.get('title', ''), row.get('title_url'))}</h3>
           <p class="event-note">Concurrent tracks run in this shared time slot.</p>
           {grid_html}
         </div>
@@ -320,28 +346,31 @@ def render_event_cell(row: dict, compact: bool = False) -> str:
       for talk in row.get("talks", []):
         presenter = str(talk.get("presenter", "")).strip()
         title = str(talk.get("title", "")).strip()
-        title_html = f"<div class=\"talk-title\">{e(title)}</div>" if title else ""
-        presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+        title_html = f"<div class=\"talk-title\">{link_text(title, talk.get('title_url'))}</div>" if title else ""
+        presenter_html = f"<div class=\"talk-presenter\">{link_text(presenter, talk.get('presenter_url'))}</div>" if presenter else ""
         talks_html += f"<li>{title_html}{presenter_html}</li>"
 
       chair_html = ""
       if row.get("chair"):
-        chair_html = f"<p class=\"event-note chair-note\">Chaired by: {e(row.get('chair', ''))}</p>"
+        chair_html = f"<p class=\"event-note chair-note\">Chaired by: {link_text(row.get('chair', ''), row.get('chair_url'))}</p>"
 
       return f"""
       <div class="event-shell">
-        <h3>{e(row.get('title', ''))}</h3>
+        <h3>{link_text(row.get('title', ''), row.get('title_url'))}</h3>
         {chair_html}
         <ul class="talk-list plenary-list">{talks_html}</ul>
       </div>
       """
 
     details = row.get("details", [])
-    detail_html = "".join(f"<div class=\"detail-line\">{e(detail)}</div>" for detail in details)
+    detail_html = "".join(
+        f"<div class=\"detail-line\">{link_text(detail.get('text', ''), detail.get('url'))}</div>"
+        for detail in details
+    )
     detail_list = f"<div class=\"detail-lines\">{detail_html}</div>" if details else ""
     return f"""
     <div class="event-shell">
-      <h3>{e(row.get('title', ''))}</h3>
+      <h3>{link_text(row.get('title', ''), row.get('title_url'))}</h3>
       {detail_list}
     </div>
     """
@@ -375,10 +404,12 @@ def render_schedule_rows(rows: list[dict], compact: bool = False) -> str:
             for track in tracks_sorted:
                 talks = track.get("talks", [])
                 presenter = ""
+                presenter_url = None
                 if talks:
                     presenter = str(talks[0].get("presenter", "")).strip()
-                title_html = f"<div class=\"talk-title\">{e(track.get('title', 'Workshop'))}</div>"
-                presenter_html = f"<div class=\"talk-presenter\">{e(presenter)}</div>" if presenter else ""
+                    presenter_url = talks[0].get("presenter_url")
+                title_html = f"<div class=\"talk-title\">{link_text(track.get('title', 'Workshop'), track.get('title_url'))}</div>"
+                presenter_html = f"<div class=\"talk-presenter\">{link_text(presenter, presenter_url)}</div>" if presenter else ""
 
                 rows_html += f"""
                 <tr class="{row_class} row-workshop-item">
@@ -386,7 +417,7 @@ def render_schedule_rows(rows: list[dict], compact: bool = False) -> str:
                     {title_html}
                     {presenter_html}
                   </td>
-                  <td class="location-col">{e(track.get('room', ''))}</td>
+                  <td class="location-col">{link_text(track.get('room', ''), track.get('room_url'))}</td>
                 </tr>
                 """
 
@@ -920,6 +951,13 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     line-height: 1.05;
     margin: 0;
     white-space: pre-line;
+  }}
+  .event-shell a,
+  .track-cell a,
+  .event-col a,
+  .location-col a {{
+    color: inherit;
+    text-decoration: underline;
   }}
   .detail-lines {{
     margin: 2px 0 0;
@@ -1455,6 +1493,12 @@ def fold_card_css() -> str:
     line-height: 1.04;
     margin: 0;
     white-space: pre-line;
+  }}
+  .event-shell a,
+  .track-cell a,
+  .track-stack-item a {{
+    color: inherit;
+    text-decoration: underline;
   }}
   .detail-lines {{ margin: 1px 0 0; font-size: 12px; }}
   .detail-line {{ margin: 0; }}
