@@ -36,6 +36,11 @@ def main() -> int:
     )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
     parser.add_argument("--base-name", default=DEFAULT_BASE_NAME, help="Output filename prefix")
+    parser.add_argument(
+        "--suppress-bold",
+        action="store_true",
+        help="Ignore bold formatting from the source Excel cells (italic/underline/links unaffected)",
+    )
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -75,6 +80,8 @@ def main() -> int:
         "--base-name",
         args.base_name,
     ]
+    if args.suppress_bold:
+        render_cmd.append("--suppress-bold")
     if run(render_cmd) != 0:
         print("[FAIL] Render step failed")
         return 1

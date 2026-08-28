@@ -57,6 +57,13 @@ ROW_BREAK = "#EDF6EF"  # pale mint background for Refreshments Break rows
 PAGE_FOOTER_LOGO = "cp_gt.png"  # or "cp_bt.png" for the black-text variant
 SCHEDULE_HEADER_RADIUS = "0"  # square corners; was "6px" for the original rounded banner
 
+# Set by main() from --suppress-bold before any rendering happens (see link_text()
+# below). A module-level flag rather than threading a parameter through every
+# render_*() function, since this is a one-shot CLI process, not a long-running
+# server — set once at startup, read everywhere. Italic/underline are unaffected;
+# this only ever silences the "bold" flag from extract_runs()'s Excel formatting.
+SUPPRESS_BOLD = False
+
 
 def e(value: object) -> str:
     if value is None:
@@ -80,7 +87,7 @@ def link_text(value: object, url: str | None = None, runs: list[dict] | None = N
         html = ""
         for run in runs:
             segment = e(run.get("text", ""))
-            if run.get("bold"):
+            if run.get("bold") and not SUPPRESS_BOLD:
                 segment = f"<strong>{segment}</strong>"
             if run.get("italic"):
                 segment = f"<em>{segment}</em>"
@@ -1827,7 +1834,15 @@ def main() -> None:
     parser.add_argument("--input-json", default=str(DEFAULT_INPUT_JSON), help="Parsed JSON input path")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
     parser.add_argument("--base-name", default=DEFAULT_BASE_NAME, help="Base output filename prefix")
+    parser.add_argument(
+        "--suppress-bold",
+        action="store_true",
+        help="Ignore bold formatting from the source Excel cells (italic/underline/links unaffected)",
+    )
     args = parser.parse_args()
+
+    global SUPPRESS_BOLD
+    SUPPRESS_BOLD = args.suppress_bold
 
     input_json = Path(args.input_json)
     output_dir = Path(args.output_dir)

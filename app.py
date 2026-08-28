@@ -71,6 +71,7 @@ def init_state() -> None:
     st.session_state.setdefault("last_input_name", "ljm_output")
     st.session_state.setdefault("last_uploaded_file_id", None)
     st.session_state.setdefault("last_is_ltrs", False)
+    st.session_state.setdefault("ltrs_show_bold", False)
 
     if not st.session_state.get("stale_cleanup_done"):
         cleanup_stale_work_dirs()
@@ -245,7 +246,7 @@ def ensure_playwright_browsers() -> None:
     st.session_state["playwright_browsers_ready"] = True
 
 
-def run_ltrs_pipeline(uploaded_file) -> dict[str, Path]:
+def run_ltrs_pipeline(uploaded_file, suppress_bold: bool = True) -> dict[str, Path]:
     ensure_playwright_browsers()
     work_dir = ensure_work_dir()
     input_path = save_uploaded_file(uploaded_file, work_dir)
@@ -264,6 +265,8 @@ def run_ltrs_pipeline(uploaded_file) -> dict[str, Path]:
         "--base-name",
         base_name,
     ]
+    if suppress_bold:
+        command.append("--suppress-bold")
     # Fold card is deliberately not surfaced in the app yet — the orchestrator
     # still generates it (cheap, ~seconds), it's just not added to `results`.
     completed = subprocess.run(command, capture_output=True, text=True)
@@ -410,7 +413,15 @@ def main() -> None:
 
     with st.sidebar:
         if is_ltrs:
-            st.caption("No extra options needed for LTRS schedules — just upload and generate.")
+            st.session_state["ltrs_show_bold"] = st.checkbox(
+                "Show bold formatting from Excel",
+                value=st.session_state["ltrs_show_bold"],
+                help=(
+                    "Off by default: some spreadsheets use bold just to make sections easier "
+                    "to scan while editing, not because it should appear in the rendered "
+                    "schedule. Italic, underline, and hyperlinks are unaffected either way."
+                ),
+            )
         else:
             if False:
                 st.session_state["render_target"] = st.radio(
@@ -479,7 +490,10 @@ def main() -> None:
         with st.spinner("Running the renderer..."):
             try:
                 if is_ltrs:
-                    results = run_ltrs_pipeline(uploaded_file)
+                    results = run_ltrs_pipeline(
+                        uploaded_file,
+                        suppress_bold=not st.session_state["ltrs_show_bold"],
+                    )
                 else:
                     results = run_pipeline(uploaded_file)
                 st.session_state["last_results"] = results

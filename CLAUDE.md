@@ -450,6 +450,45 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — Streamlit checkbox to suppress bold formatting)
+Same session, right after the bold/italic/underline feature above. User uses bold in their own
+source spreadsheet just to make sections easier to scan while editing, and doesn't always want
+that translating into the rendered schedule — asked (after a "discuss, don't do" scoping
+question first) for a Streamlit checkbox, defaulting to bold suppressed.
+
+- **Kept the fix contained to one line, as scoped in the prior discussion**: `link_text()` in
+  `render_ltrs2026_booklet.py` already applies `<strong>` for a run with `bold: true`; that one
+  `if` gained `and not SUPPRESS_BOLD`. Italic, underline, and hyperlinks are untouched — this only
+  ever silences the bold flag.
+- **`SUPPRESS_BOLD` is a module-level flag**, not a parameter threaded through every `render_*()`
+  function — deliberate, since this is a one-shot CLI process (not a long-running server): `main()`
+  sets it once from a new `--suppress-bold` flag before any rendering happens, and `link_text()`
+  just reads it. Threading a parameter through `render_talk_cell()` → `render_track_grid()` →
+  `render_track_stack()` → `render_event_cell()` → `render_schedule_rows()` → the three
+  `render_*_html()` entry points would have been a lot of signature churn for a simple on/off
+  switch.
+- **Plumbed straight through the existing subprocess chain**, same shape as `--sheet` and
+  `--suppress-bold`'s siblings: `make_ltrs2026_schedule.py` gained its own `--suppress-bold` flag,
+  appended to the `render_ltrs2026_booklet.py` subprocess call only when set (so the bare-CLI
+  default is unchanged — bold still shows by default outside the app, only the *app's* checkbox
+  defaults differently). `app.py`'s `run_ltrs_pipeline()` gained a `suppress_bold: bool = True`
+  parameter, appended as `--suppress-bold` to its own subprocess call.
+- **New sidebar checkbox** (`is_ltrs` branch only): "Show bold formatting from Excel", unchecked
+  by default (`st.session_state["ltrs_show_bold"]`, seeded `False` in `init_state()`), replacing
+  the old "No extra options needed..." caption since there's now an actual option. Generation
+  passes `suppress_bold=not st.session_state["ltrs_show_bold"]` — checkbox semantics are
+  "show bold" (positive framing for the user), internal plumbing is "suppress bold" (matches the
+  flag name throughout the rest of the chain); the `not` at the one call site is the sole place
+  those two framings meet.
+- **Verified end-to-end through a real running Streamlit session** (not just unit-testing the
+  flag), per [[feedback-visual-verification]]: launched the app, uploaded a synthetic workbook
+  with mixed bold+italic+underline+whole-cell-bold cells, generated with the checkbox at its
+  default (unchecked) and downloaded the HTML — confirmed zero `<strong>` tags while `<em>`/`<u>`
+  survived untouched; then checked the box, regenerated, and confirmed `<strong>` (including the
+  `<u><strong>...</strong></u>` nested case) came back correctly. Also confirmed the plain CLI
+  (`make_ltrs2026_schedule.py` with no `--suppress-bold`) is unaffected — bold still renders by
+  default there, only the Streamlit app's checkbox changes the default.
+
 ## Session Log (2026-08-20, cont'd — bold/italic/underline carried through from Excel)
 Same session, right after hyperlinks. User asked to detect basic character-level formatting too
 (bold/italic/underline), including formatting applied to only *part* of a cell's text — explicitly

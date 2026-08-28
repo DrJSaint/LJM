@@ -31,7 +31,9 @@ the PDF too. No setup needed; it's detected automatically per cell.
 Bold, italic, and underline formatting in those same columns also carries through — including
 formatting applied to only part of a cell's text (e.g. one word in bold within an otherwise plain
 sentence). Colour and font are deliberately never picked up from the source, only bold/italic/
-underline, to keep the brand's fixed colour/font rules intact.
+underline, to keep the brand's fixed colour/font rules intact. Bold specifically can be switched
+off with `--suppress-bold` (italic/underline/links are unaffected) — the Streamlit app exposes
+this as a checkbox, unchecked (bold suppressed) by default.
 
 Outputs written to `output/`:
 
@@ -288,7 +290,10 @@ offers both two-side PDF variants (digital/white paper and beige paper — see t
 outputs table above), two-side HTML, and single-page HTML individually plus a "Download all as
 ZIP" button. The fold card is generated behind the scenes but not exposed here — it's deliberately
 excluded from the Streamlit flow for now. The sidebar's LJM-only controls (date picker, week
-count, layout mode) are hidden for this mode since they don't apply.
+count, layout mode) are hidden for this mode since they don't apply, replaced by a single "Show
+bold formatting from Excel" checkbox — unchecked by default, since bold in the source spreadsheet
+is often just there to help with editing, not meant to appear in the rendered schedule. Italic,
+underline, and hyperlinks always come through regardless of this checkbox.
 
 Every generated LTRS HTML file is fully self-contained — fonts and images are embedded as base64
 data URIs rather than linked as relative paths — so moving, emailing, or downloading the file from
