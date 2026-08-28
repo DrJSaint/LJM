@@ -450,6 +450,36 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — unified detail/talk text to 12px)
+Same session. User spotted, from a printed page, that the presenter text under the top three
+plain events (Registration/Conference Opening/Conference Keynote) looked bigger than the
+presenter text under Parallel Workshops items just below — asked to check first, confirmed it
+was real (not their imagination), then asked to bring everything to 12px.
+
+- **Root cause: two different rendering paths had drifted apart.** Plain event rows use
+  `.detail-lines`/`.detail-line`, already bumped to 12px in an earlier session (to match the
+  location column). Workshop/session/plenary talk items render through a completely different
+  path (`.talk-title`/`.talk-presenter`, and workshop items specifically bypass even that via
+  `render_schedule_rows()`'s own inline row-building) that was never touched by that earlier
+  bump and was still sitting at the original 11px.
+- **Brought every related secondary-text selector to 12px** in the shared single-page/two-side
+  scope (`schedule_table_css()`): `.talk-presenter`, `.talk-title`, `.plenary-list .talk-title`
+  (a more specific override that would otherwise have kept plenary talk titles at 11px even
+  after the base `.talk-title` rule changed), `.event-note` (the italic "Chaired by:"/"Concurrent
+  tracks..." line), and `.track-chair` (the "Chaired by:" line inside a track header). Bumped
+  `.talk-title` alongside `.talk-presenter` even though only presenter text was called out
+  directly — leaving the title at 11px next to its own now-12px presenter line would have just
+  traded one inconsistency for a new one within the same block. `.workshop-location-hint` was
+  deliberately left alone — it's a small-caps label, not body/detail text, a different thing by
+  design. Fold-card's own separate CSS needed no changes — it was already uniformly 12px
+  everywhere, confirmed by checking rather than assuming.
+- **Verified by rendering, not just editing the numbers**: regenerated the real pipeline and
+  rendered all pages of the exported PDF, checking specifically for wrapping/overflow in the
+  tightest space affected — the 3-column Parallel Presentation Sessions track grid — since a 1px
+  bump to bold talk-title text in a narrow column was the main risk. No overflow or awkward wraps
+  anywhere; text now reads consistently sized across plain events, workshops, plenary talks, and
+  parallel sessions alike.
+
 ## Session Log (2026-08-20, cont'd — talk-title subtitle line uses talk font, not Magnole)
 Same session. User pointed at the Keynote event specifically: the Excel cell has "Conference
 Keynote" on line 1 (correct — brand Magnole heading) and the actual talk title ("Navigating

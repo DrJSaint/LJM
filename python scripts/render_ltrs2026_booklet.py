@@ -1022,7 +1022,7 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   .detail-line {{ margin: 1px 0; }}
   .event-note {{
     margin: 2px 0 0;
-    font-size: 11px;
+    font-size: 12px;
     font-style: italic;
   }}
   .chair-note {{
@@ -1099,7 +1099,7 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   }}
   .track-chair {{
     display: block;
-    font-size: 11px;
+    font-size: 12px;
     font-style: italic;
     margin-top: 3px;
   }}
@@ -1125,17 +1125,17 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     padding-top: 0;
   }}
   .talk-presenter {{
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
     line-height: 1.25;
   }}
   .talk-title {{
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1.25;
   }}
   .plenary-list .talk-title {{
-    font-size: 11px;
+    font-size: 12px;
   }}
   /* Row type color mapping */
   .row-event .event-col,
