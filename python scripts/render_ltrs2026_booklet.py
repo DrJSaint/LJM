@@ -520,6 +520,16 @@ def split_rows_two_sides(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     split_idx = max(min_side_rows, split_idx)
     split_idx = min(len(rows) - min_side_rows, split_idx)
     split_idx = max(1, min(len(rows) - 1, split_idx))
+
+    # A break row landing as the very last row of the front side reads oddly and,
+    # with taller content, has actually overflowed the physical A4 page in
+    # practice — a break is a natural, low-cost place to start the next page
+    # instead, so nudge it across the boundary rather than trying to squeeze it
+    # onto the page it doesn't fit on. Only moves it forward one row, so this
+    # can't meaningfully affect the balance elsewhere.
+    if split_idx > min_side_rows and rows[split_idx - 1].get("kind") == "break":
+        split_idx -= 1
+
     return rows[:split_idx], rows[split_idx:]
 
 
@@ -980,14 +990,14 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   }}
   .event-col {{
     border: 1px solid var(--border-grey);
-    padding: 3px 6px;
+    padding: 2px 6px;
     vertical-align: top;
     background: {background_var};
   }}
   .location-col {{
     width: 18%;
     border: 1px solid var(--border-grey);
-    padding: 4px 5px;
+    padding: 2px 5px;
     vertical-align: top;
     text-align: left;
     font-size: 12px;
@@ -1051,8 +1061,8 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     font-size: 11px;
   }}
   .row-workshop-item .event-col {{
-    padding-top: 5px;
-    padding-bottom: 5px;
+    padding-top: 3px;
+    padding-bottom: 3px;
   }}
   .row-workshop-item .talk-presenter {{
     margin-top: 2px;
@@ -1069,7 +1079,7 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     border-left: 1px solid var(--border-grey);
     border-right: 1px solid var(--border-grey);
     background: {background_var};
-    padding: 5px 6px;
+    padding: 3px 6px;
   }}
   .track-row-header .track-cell {{
     border-top: 1px solid var(--border-grey);
@@ -1095,13 +1105,13 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   .track-room {{
     font-size: 12px;
     font-weight: 700;
-    margin-top: 2px;
+    margin-top: 1px;
   }}
   .track-chair {{
     display: block;
     font-size: 12px;
     font-style: italic;
-    margin-top: 3px;
+    margin-top: 1px;
   }}
   .talk-body {{
     border-top: 1px solid var(--border-grey);
@@ -1110,13 +1120,13 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     border-top: 0;
   }}
   .talk-list {{
-    margin: 4px 0 0;
+    margin: 2px 0 0;
     padding: 0;
     list-style: none;
   }}
   .talk-list li {{
-    margin-top: 4px;
-    padding-top: 4px;
+    margin-top: 2px;
+    padding-top: 2px;
     border-top: 1px solid var(--border-grey);
   }}
   .talk-list li:first-child {{
@@ -1127,12 +1137,12 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   .talk-presenter {{
     font-size: 12px;
     font-weight: 400;
-    line-height: 1.25;
+    line-height: 1.15;
   }}
   .talk-title {{
     font-size: 12px;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.15;
   }}
   .plenary-list .talk-title {{
     font-size: 12px;
@@ -1265,20 +1275,11 @@ def render_single_page_html(parsed: dict, programme: list[dict]) -> str:
 """
 
 
-def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bool = False) -> str:
-    rows = build_onepager_rows(programme)
-    front_rows, back_rows = split_rows_two_sides(rows)
-    front_rows_html = render_schedule_rows(front_rows)
-    back_rows_html = render_schedule_rows(back_rows)
-
-    return f"""<!doctype html>
-<html lang="en-GB">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LTRS 2026 Schedule - A4 Two Side</title>
-  <style>
-{base_css(beige_paper=beige_paper)}
+def two_side_page_css(background_var: str = "var(--cream)") -> str:
+    # Extracted so the measured-fit splitter (split_rows_two_sides_by_fit) can
+    # render a candidate page with the exact same styles as the real output —
+    # same reasoning as fold_card_css()/schedule_table_css() being split out.
+    return f"""
   @page {{ size: A4 portrait; margin: 0; }}
   .a4-page {{
     width: 210mm;
@@ -1286,7 +1287,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bo
     padding: 8mm;
     margin: 0 auto;
     page-break-after: always;
-    background: var(--cream-bg);
+    background: {background_var};
     display: flex;
     flex-direction: column;
   }}
@@ -1304,7 +1305,7 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bo
   .a4-page.continuation .schedule-table thead {{
     display: none;
   }}
-{schedule_table_css(background_var="var(--cream-bg)")}
+{schedule_table_css(background_var=background_var)}
   @media print {{
     .schedule-header {{
       background: var(--green) !important;
@@ -1346,71 +1347,146 @@ def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bo
     body {{ background: var(--screen-preview-backdrop); padding: 10px; }}
     .a4-page {{ box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); margin-bottom: 12px; }}
   }}
-  </style>
-</head>
-<body>
-  <main class="a4-page">
-    <header class="schedule-header" role="banner">
-      <div class="schedule-header-top">
-        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
-        <h1>LTRS 2026</h1>
-      </div>
-      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
-      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
-      <p class="source-line">September 10th, 2026</p>
-    </header>
-    <table class="schedule-table" aria-describedby="schedule-caption-front">
-      <caption id="schedule-caption-front" class="sr-only">LTRS 2026 conference schedule side 1 with columns for time, event details, and location.</caption>
-      <colgroup>
-        <col class="col-time">
-        <col class="col-event">
-        <col class="col-location">
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col">Time</th>
-          <th scope="col">Event</th>
-          <th scope="col">Location</th>
-        </tr>
-      </thead>
-      <tbody>
-        {front_rows_html}
-      </tbody>
-    </table>
-  </main>
+"""
 
-  <main class="a4-page continuation">
-    <header class="schedule-header" role="banner">
-      <div class="schedule-header-top">
-        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
-        <h1>LTRS 2026</h1>
-      </div>
-      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
-      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
-      <p class="source-line">September 10th, 2026</p>
-    </header>
-    <table class="schedule-table" aria-describedby="schedule-caption-back">
-      <caption id="schedule-caption-back" class="sr-only">LTRS 2026 conference schedule side 2 with columns for time, event details, and location.</caption>
-      <colgroup>
-        <col class="col-time">
-        <col class="col-event">
-        <col class="col-location">
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col">Time</th>
-          <th scope="col">Event</th>
-          <th scope="col">Location</th>
-        </tr>
-      </thead>
-      <tbody>
-        {back_rows_html}
-      </tbody>
-    </table>
+
+def two_side_page_html(rows_html: str, continuation: bool = False) -> str:
+    # One .a4-page's worth of markup (header + table, plus the footer on the
+    # continuation page) — shared by the real render and the measured-fit
+    # splitter's candidate-page measurement pass.
+    page_class = "a4-page continuation" if continuation else "a4-page"
+    side = "back" if continuation else "front"
+    side_label = "side 2" if continuation else "side 1"
+    footer_html = f"""
     <footer class="page-footer">
       <img src="{asset_data_uri(PAGE_FOOTER_LOGO)}" alt="Regent's University London — Cultivating Possibility">
-    </footer>
-  </main>
+    </footer>""" if continuation else ""
+    return f"""
+  <main class="{page_class}">
+    <header class="schedule-header" role="banner">
+      <div class="schedule-header-top">
+        <img class="schedule-header-logo" src="{asset_data_uri('r_logo.png')}" alt="Regent's University London logo">
+        <h1>LTRS 2026</h1>
+      </div>
+      <p class="subtitle-line magnole">Care, Collaboration, and Community: Building Belonging in Higher Education</p>
+      <p class="subtitle-line">Learning, Teaching, Research and Scholarship Conference</p>
+      <p class="source-line">September 10th, 2026</p>
+    </header>
+    <table class="schedule-table" aria-describedby="schedule-caption-{side}">
+      <caption id="schedule-caption-{side}" class="sr-only">LTRS 2026 conference schedule {side_label} with columns for time, event details, and location.</caption>
+      <colgroup>
+        <col class="col-time">
+        <col class="col-event">
+        <col class="col-location">
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          <th scope="col">Event</th>
+          <th scope="col">Location</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>{footer_html}
+  </main>"""
+
+
+# A4 portrait page height budget for the measured-fit two-side splitter — the
+# .a4-page box itself (min-height: 297mm, padding included per box-sizing:
+# border-box), so this is compared directly against .a4-page's scrollHeight,
+# not the content area alone.
+TWO_SIDE_PAGE_BUDGET_PX = round(297 * 96 / 25.4)
+
+
+def measure_two_side_page_height(rows_for_page: list[dict], continuation: bool = False) -> int:
+    """Render a candidate front/back page's actual markup in headless Chromium
+    and return its true content height in px — used by
+    split_rows_two_sides_by_fit() so the front/back boundary is chosen from a
+    real measurement, not the row_layout_weight() guess."""
+    from playwright.sync_api import sync_playwright
+
+    rows_html = render_schedule_rows(rows_for_page)
+    html = f"""<!doctype html>
+<html><head><style>
+{base_css()}
+{two_side_page_css()}
+</style></head>
+<body>{two_side_page_html(rows_html, continuation=continuation)}</body></html>"""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 900, "height": 3000})
+        page.set_content(html)
+        height = page.locator(".a4-page").first.evaluate("el => el.scrollHeight")
+        browser.close()
+    return height
+
+
+def split_rows_two_sides_by_fit(rows: list[dict], budget_px: int) -> tuple[list[dict], list[dict]]:
+    """Grow the front side one row at a time, actually rendering and measuring
+    it, stopping just before the next row would overflow budget_px — a real
+    'does it fit' check rather than row_layout_weight()'s abstract guess.
+    Falls back to that heuristic for degenerate inputs (nothing to measure)."""
+    if len(rows) <= 1:
+        return split_rows_two_sides(rows)
+
+    from playwright.sync_api import sync_playwright
+
+    min_side_rows = 3
+    front: list[dict] = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 900, "height": 3000})
+
+        for row in rows:
+            candidate = front + [row]
+            # Always leave at least min_side_rows for the back side.
+            if len(rows) - len(candidate) < min_side_rows and front:
+                break
+            rows_html = render_schedule_rows(candidate)
+            html = f"""<!doctype html>
+<html><head><style>
+{base_css()}
+{two_side_page_css()}
+</style></head>
+<body>{two_side_page_html(rows_html, continuation=False)}</body></html>"""
+            page.set_content(html)
+            height = page.locator(".a4-page").first.evaluate("el => el.scrollHeight")
+            if height > budget_px and front:
+                break
+            front.append(row)
+
+        browser.close()
+
+    if not front:
+        front = [rows[0]]
+
+    return front, rows[len(front):]
+
+
+def render_two_side_a4_html(parsed: dict, programme: list[dict], beige_paper: bool = False) -> str:
+    rows = build_onepager_rows(programme)
+    front_rows, back_rows = split_rows_two_sides_by_fit(rows, TWO_SIDE_PAGE_BUDGET_PX)
+    front_rows_html = render_schedule_rows(front_rows)
+    back_rows_html = render_schedule_rows(back_rows)
+    background_var = "var(--cream-bg)"
+
+    return f"""<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LTRS 2026 Schedule - A4 Two Side</title>
+  <style>
+{base_css(beige_paper=beige_paper)}
+{two_side_page_css(background_var=background_var)}
+  </style>
+</head>
+<body>{two_side_page_html(front_rows_html, continuation=False)}
+{two_side_page_html(back_rows_html, continuation=True)}
 </body>
 </html>
 """

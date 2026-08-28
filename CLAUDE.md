@@ -450,6 +450,72 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — two-side PDF genuine page overflow, measured-fit splitter)
+Same session, immediately after the 12px unification above. User spotted "Refreshments Break"
+sitting alone at the top of an otherwise-blank page in the two-side PDF and asked to move it to
+start the next page — flagged upfront as possibly needing "a bit of a fudge." Turned into a
+significantly bigger fix once investigated properly.
+
+- **First correction: this was never a "browser print looks fine, our PDF export is broken"
+  problem**, even though it initially looked that way. User later clarified the HTML "looks good"
+  — but that just meant viewing it on screen, where `.a4-page` has no physical height limit at
+  all and nothing can ever look cut off. Confirmed the real mechanism by measuring, not guessing:
+  loaded the two-side HTML with Playwright, called `page.emulate_media(media="print")`, and read
+  `.a4-page`'s actual `scrollHeight` — front-side content measured **312.7mm** against a **297mm**
+  physical A4 page, a genuine ~16mm content overflow, not a PDF-export artifact. (Also ruled out a
+  web-font-loading race as a possible cause by explicitly waiting on `document.fonts.ready` before
+  export — no change, confirming it wasn't that either.)
+- **First attempt — nudge the split point** (closer to the user's literal ask): added a rule to
+  `split_rows_two_sides()` so a `kind == "break"` row landing as the very last row of the front
+  side gets pushed to start the back side instead, since a break is a natural, low-cost place to
+  begin a new page. Reduced overflow from 312.7mm to 302.9mm — better, but still over budget, so
+  the PDF still ran to 3 physical pages. One row's worth of nudging wasn't enough by itself.
+- **Real fix: gave the two-side split the same measured-fit treatment the fold card already has**,
+  rather than continuing to patch `row_layout_weight()`'s abstract per-kind guess (`parallel_
+  sessions`=5, `plenary`=3, etc.) — that heuristic has no idea how tall content actually renders,
+  which is exactly what let this drift once text got bigger, and would drift again with any future
+  content change. Extracted `two_side_page_css()` and `two_side_page_html()` from
+  `render_two_side_a4_html()` (previously inline in one large f-string) so a measurement pass and
+  the real render share byte-identical markup/styles — same principle as `fold_card_css()` /
+  `schedule_table_css()` being split out earlier. New `TWO_SIDE_PAGE_BUDGET_PX = round(297 * 96 /
+  25.4)` and `split_rows_two_sides_by_fit()` greedily grow the front side one row at a time,
+  actually rendering and measuring `.a4-page.scrollHeight` in headless Chromium via
+  `measure_two_side_page_height()`, stopping just before the next row would overflow — directly
+  parallel to `split_rows_by_fit()`'s design for the fold card. `render_two_side_a4_html()` now
+  calls this instead of the old weight-based `split_rows_two_sides()` (which still exists,
+  unchanged plus its break-row nudge, as the fallback for degenerate/trivial inputs).
+- **This surfaced a second, bigger problem the row-boundary fix alone couldn't solve**: after the
+  measured-fit splitter correctly pinned the front page to exactly 297.1mm, the back page —
+  carrying everything that no longer fit on front, including the heavy 3-track/11-talk Parallel
+  Presentation Sessions block — swelled to **400.3mm**. Confirmed by row count (11 rows front, 11
+  back) that this wasn't a splitter bug hoarding content on one side; it's that total content, at
+  the new 12px sizing, genuinely no longer fits in 2×297mm of physical page. No amount of
+  boundary-shuffling can fix a total-content-exceeds-total-budget problem — asked the user how to
+  proceed rather than guessing (shrink text back down / tighten spacing and keep 12px / accept
+  occasional 3-page overflow with a warning / look at the current overflow first). User chose:
+  **keep the 12px text, tighten spacing instead**.
+- **Spacing tightened in `schedule_table_css()`** (shared single-page/two-side scope only —
+  fold-card's own copy deliberately untouched, it wasn't the problem): `.event-col`/`.location-col`
+  padding 3px/4px → 2px vertical; `.row-workshop-item .event-col` padding 5px → 3px;
+  `.track-cell` padding 5px → 3px vertical (the single biggest win — this cell repeats for every
+  track header and every talk in both Parallel Workshops and Parallel Presentation Sessions);
+  `.track-room`/`.track-chair` margin-top 2px/3px → 1px; `.talk-list`/`.talk-list li` margin/
+  padding 4px → 2px; `.talk-presenter`/`.talk-title` `line-height` 1.25 → 1.15. Text size
+  untouched throughout — this is pure whitespace reduction.
+- **Result, re-measured after tightening**: both `.a4-page` elements now land at exactly
+  **297.1mm** each (the measured-fit splitter naturally rebalanced the boundary once rows got
+  shorter) and the exported PDF is back to 2 physical pages. Confirmed via the same
+  `page.emulate_media(media="print")` + `scrollHeight` measurement technique used to diagnose the
+  problem in the first place, not just re-running the pipeline and hoping.
+- **Verified by rendering all pages, not just checking the numbers**: rendered both PDF pages,
+  single-page HTML, the beige-paper PDF variant (also back to 2 pages), and fold-card (confirmed
+  completely unaffected, byte-scope-isolated as intended) to images and visually confirmed nothing
+  reads as cramped or awkwardly spaced despite the tightening — the reduction was modest enough
+  (a few px per repeated element) to reclaim the needed room without the page looking dense.
+- Runtime cost: the measured-fit two-side split adds one Playwright render/measure pass per
+  candidate row (similar to the fold card's existing approach) — full pipeline still completes in
+  ~6-7 seconds end to end, no perceptible slowdown.
+
 ## Session Log (2026-08-20, cont'd — unified detail/talk text to 12px)
 Same session. User spotted, from a printed page, that the presenter text under the top three
 plain events (Registration/Conference Opening/Conference Keynote) looked bigger than the
