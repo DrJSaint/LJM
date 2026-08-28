@@ -450,6 +450,35 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — talk-title subtitle line uses talk font, not Magnole)
+Same session. User pointed at the Keynote event specifically: the Excel cell has "Conference
+Keynote" on line 1 (correct — brand Magnole heading) and the actual talk title ("Navigating
+Without a Compass: ...") on line 2 via the manual-line-break feature from earlier — but that
+second line was *also* rendering in Magnole, when it should look like every other talk title in
+the document (plain sans-serif). Flagged upfront as possibly needing "a bit of a fudge."
+
+- **Solved with a `::first-line` pseudo-element rather than restructuring the HTML.** `.event-
+  shell h3` still renders as one element (the title/subtitle split is just a `\n` from
+  `white-space: pre-line`, same mechanism as the original line-break feature — no new HTML
+  structure, no parser changes). Flipped the base rule to the *talk* style (`AvenirLocal`, bold,
+  11px/12px, matching `.talk-title`) and added `h3::first-line { font-family: "Magnole", ...
+  18px/15px }` to override just the first rendered line back to the brand heading style.
+- **Why this doesn't touch any of the many single-line titles** ("Registration", "Parallel
+  Workshops", "Plenary (VC Funding)", etc.): `::first-line` matches the *entire* text when there's
+  no line break — there's only one line, so the override applies everywhere, and the base
+  (talk-style) rule never becomes visible. It only shows through on rendered lines *after* the
+  first, i.e. only for a title with a manual `\n` — exactly the Keynote-style case, without
+  needing to special-case it by content or add a new field to the data model.
+- Applied to both `.event-shell h3` instances — the shared `schedule_table_css()`
+  (single-page/two-side) and fold-card's separate `fold_card_css()` — using each scope's own
+  existing talk-title size (11px/1.25 vs 12px/1.08) so the subtitle matches whichever document
+  it's rendered into, not a single hardcoded value.
+- **Verified by rendering, not reasoning from CSS alone**: regenerated the real pipeline and
+  rendered both the two-side PDF and the fold card to images — confirmed "Conference Keynote"
+  stayed Magnole, "Navigating Without a Compass: ..." switched to the plain sans-serif talk style
+  in both outputs, and every other event/workshop/session title on the page was visually
+  unchanged.
+
 ## Session Log (2026-08-20, cont'd — Streamlit checkbox to suppress bold formatting)
 Same session, right after the bold/italic/underline feature above. User uses bold in their own
 source spreadsheet just to make sections easier to scan while editing, and doesn't always want

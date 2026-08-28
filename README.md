@@ -55,7 +55,7 @@ since that's providing contrast against printed green, not matching the paper.
 
 The fold card's four quarters are split by actually rendering and measuring each candidate panel against the physical page size (`split_rows_by_fit()` in `render_ltrs2026_booklet.py`), not an abstract content-weight guess — so generating it takes a few seconds longer than the other two outputs while it launches headless Chromium to check the fit. See CLAUDE.md's "fold-card rebuild" session log for detail. Some further tweaks are expected in a future session; treat it as working, not finished.
 
-A manual line break in an Event cell (Alt+Enter in Excel) carries through to the rendered title — useful for a short "kicker" line above a longer subtitle (e.g. "Keynote" / "Navigating Without a Compass: ..."). Other whitespace in the cell is still tidied up as normal; only the line break itself is preserved.
+A manual line break in an Event cell (Alt+Enter in Excel) carries through to the rendered title — useful for a short "kicker" line above a longer subtitle (e.g. "Keynote" / "Navigating Without a Compass: ..."). Other whitespace in the cell is still tidied up as normal; only the line break itself is preserved. The first line keeps the brand Magnole heading style; any line after it automatically switches to the same plain style used for talk titles elsewhere in the schedule — no extra setup needed, it's purely based on whether the title has a line break at all.
 
 ### Quick style toggles
 

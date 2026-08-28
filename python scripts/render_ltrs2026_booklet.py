@@ -995,12 +995,18 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     background: {background_var};
   }}
   .event-shell h3 {{
+    font-family: "AvenirLocal", "Avenir Next", Arial, sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1.25;
+    margin: 0;
+    white-space: pre-line;
+  }}
+  .event-shell h3::first-line {{
     font-family: "Magnole", Georgia, serif;
     font-weight: 400;
     font-size: 18px;
     line-height: 1.05;
-    margin: 0;
-    white-space: pre-line;
   }}
   .event-shell a,
   .track-cell a,
@@ -1537,12 +1543,18 @@ def fold_card_css() -> str:
     background: var(--cream);
   }}
   .event-shell h3 {{
+    font-family: "AvenirLocal", "Avenir Next", Arial, sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    line-height: 1.08;
+    margin: 0;
+    white-space: pre-line;
+  }}
+  .event-shell h3::first-line {{
     font-family: "Magnole", Georgia, serif;
     font-weight: 400;
     font-size: 15px;
     line-height: 1.04;
-    margin: 0;
-    white-space: pre-line;
   }}
   .event-shell a,
   .track-cell a,
