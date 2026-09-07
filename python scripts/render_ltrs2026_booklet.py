@@ -1115,9 +1115,11 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   }}
   .talk-body {{
     border-top: 1px solid var(--border-grey);
+    padding-top: 4px;
   }}
   .track-row-header + .track-row .talk-body {{
     border-top: 0;
+    padding-top: 0;
   }}
   .talk-list {{
     margin: 2px 0 0;

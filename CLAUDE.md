@@ -450,6 +450,32 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — space below track-grid divider lines specifically)
+Same session, immediately after the track-cell padding restore above. User compared the Plenary
+block's talk dividers (fine) against Parallel Presentation Sessions' talk dividers (still tight)
+and pinned it down precisely: the space *below* the internal divider lines specifically, not the
+space at the top of the section — the earlier `.track-cell` padding fix hadn't touched this.
+
+- **Root cause: `.talk-body`'s divider border had no padding of its own.** `.track-cell`'s
+  padding (restored to `5px 6px` in the previous fix) sits *around* the whole cell, and each talk
+  is its own separate `.track-row`/`.track-cell` — so the gap *before* a divider line (previous
+  talk's padding-bottom + next cell's padding-top) was already generous, but the divider itself
+  (`.talk-body { border-top: ... }`) had zero padding of its own, so the following talk's title
+  sat directly against the line with no space at all. Contrast with Plenary's `.talk-list li`,
+  which has an explicit `padding-top: 2px` *after* its own border — the structural reason the two
+  looked different despite both getting the same `.track-cell`-style padding restore.
+- **Fixed with `padding-top: 4px` on `.talk-body`** (matching the general shape of `.talk-list
+  li`'s own border+padding pairing), with the existing `.track-row-header + .track-row .talk-body`
+  override (the *first* talk under a track header, which has no border at all) also set to
+  `padding-top: 0` — that talk already gets its spacing from `.track-cell`'s own padding-top
+  transitioning from the header row, so adding this on top would have given it more space than
+  every other talk, which is exactly the "space from the top" the user said they weren't asking
+  about.
+- **Verified with a close-up crop, not just re-running the pipeline**: rendered the exported PDF's
+  Parallel Presentation Sessions panel and cropped in tight on the divider lines specifically —
+  confirmed real, visible space between each line and the talk title that follows, and reconfirmed
+  the page count is still exactly 2 physical pages.
+
 ## Session Log (2026-08-20, cont'd — restored track-cell breathing room)
 Same session. User spotted the Parallel Presentation Sessions track cells' text sitting right up
 against the dividing lines and correctly guessed this was fallout from the earlier
