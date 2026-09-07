@@ -23,6 +23,12 @@ If the target sheet doesn't look like an LTRS schedule (none of the expected col
 Duration, End, Event, Location, Presenter, Chair — are present) or has no usable rows, the
 pipeline fails with a specific error message instead of silently generating a blank schedule.
 
+The Plenary session's title (e.g. "Plenary (VC Funding)") can be renamed freely to whatever this
+year's theme is — it's detected by the shape of the rows underneath it (untimed talk rows with a
+presenter but no location), not by matching that literal text. "Parallel Workshops" and "Parallel
+Presentation Session N: ..." are still matched by their literal text, since those are structural
+section labels rather than year-specific content.
+
 A hyperlink on any cell in the Event, Location, Presenter, or Chair columns (a normal Excel
 hyperlink, right-click → Link) carries through to every output — the text renders as a real,
 clickable link in the HTML and (since the exported PDF is generated straight from that HTML) in

@@ -450,6 +450,43 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — renamed Plenary title stopped its talks rendering)
+Same session. User renamed the Excel cell "Plenary (VC Funding)" to "Showcasing our VC Funded
+Projects" and found the 8 talks underneath it disappeared from the rendered output entirely.
+
+- **Root cause, `parse_ltrs2026_v1.py`'s block-type routing in `parse_v1()`'s main loop:** block
+  type was decided by exact string match — `elif event == "Plenary (VC Funding)":` — a literal,
+  hardcoded comparison against that one specific title. Renaming the cell broke the match, so the
+  block silently fell through to the generic `else` branch (`parse_standard_event()`), which only
+  ever reads a single row and has no concept of "collect the untimed talk rows that follow." Those
+  talk rows then got individually swept up as `"unparsed_row"` entries by the loop's own "not a
+  block header" fallback — which `build_onepager_rows()` has no rendering case for, so they just
+  vanished rather than erroring.
+- **Fixed by detecting the block *structurally* instead of by title text.** New
+  `looks_like_plenary_block(rows, i)`: a plenary's talks are untimed rows with a Presenter but no
+  Location (one shared venue); Parallel Workshops' items are the same "untimed, no Start time"
+  shape but each carries its own Location (room) — so checking whether the very next row has a
+  Presenter and no Location distinguishes them without caring what the header itself is titled.
+  Wired in as `elif event == "Plenary (VC Funding)" or looks_like_plenary_block(rows, i):` — the
+  literal string stays as a cheap fast-path/back-compat check, the structural check is what
+  actually saves this from breaking again on a future rename.
+- **First pass at this introduced a real regression, caught before shipping**: placed the new
+  `elif` *before* the existing `elif event.startswith("Parallel Presentation Session")` check.
+  Parallel Presentation Sessions' individual talks have the exact same "Presenter, no Location"
+  shape as plenary talks, so `looks_like_plenary_block()` matched them too — and since it came
+  first in the `elif` chain, the entire 3-track/11-talk Parallel Presentation Sessions block got
+  swallowed into a single (wrong) plenary block instead. Caught by actually re-running the parser
+  against the real workbook and reading the block-type summary line by line, not just checking
+  that the renamed block itself worked. Fixed by moving the more specific, still-title-based
+  `"Parallel Presentation Session"` prefix check ahead of the new structural one, so a block only
+  falls through to the structural plenary check once the more specific known shapes are ruled out.
+- **Verified against the real, currently-live workbook** (which had the rename in it, plus other
+  changes the user had made since the last session): confirmed the renamed block now reports "8
+  items" in the parse summary and all 8 talks render correctly on the page, confirmed the
+  Parallel Presentation Sessions block is back to its correct 3-session/11-talk structure (not
+  swallowed), and rendered both exported PDF pages to images to confirm no visual regression and
+  the document is still a clean 2 physical pages.
+
 ## Session Log (2026-08-20, cont'd — two-side PDF genuine page overflow, measured-fit splitter)
 Same session, immediately after the 12px unification above. User spotted "Refreshments Break"
 sitting alone at the top of an otherwise-blank page in the two-side PDF and asked to move it to

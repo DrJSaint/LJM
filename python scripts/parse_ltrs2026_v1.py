@@ -216,6 +216,26 @@ def is_block_header(row: Dict[str, Any]) -> bool:
     return bool(fmt_time(row.get("Start")) and clean(row.get("Event")))
 
 
+def looks_like_plenary_block(rows: List[Dict[str, Any]], i: int) -> bool:
+    """Whether the block header at rows[i] is followed by plenary-shaped talk
+    rows, regardless of what the header's Event title actually says.
+
+    A plenary's talks are untimed rows with a Presenter but no Location (one
+    shared venue) — Parallel Workshops' items are the same "untimed, no Start
+    time" shape but each has its own Location (room). Checking the data shape
+    of the row that follows, rather than requiring the header's title to
+    literally read "Plenary (VC Funding)", means renaming that title (as the
+    conference theme changes year to year) doesn't silently stop the talks
+    underneath it from rendering.
+    """
+    if i + 1 >= len(rows):
+        return False
+    next_row = rows[i + 1]
+    if is_block_header(next_row):
+        return False
+    return bool(clean(next_row.get("Presenter")) and not clean(next_row.get("Location")))
+
+
 def row_to_dict(row: Any, meta: Optional[Dict[str, dict]] = None) -> Dict[str, Any]:
     base = {k: row.get(k, "") for k in ["Start", "Duration", "End", "Event", "Location", "Presenter", "Chair"]}
     base["_meta"] = meta or {}
@@ -477,11 +497,11 @@ def parse_v1(input_file: Path, sheet_name: Optional[str]) -> Dict[str, Any]:
             if event == "Parallel Workshops":
                 block, i = parse_workshop_block(rows, i)
                 programme.append(block)
-            elif event == "Plenary (VC Funding)":
-                block, i = parse_plenary_block(rows, i)
-                programme.append(block)
             elif event.startswith("Parallel Presentation Session"):
                 block, i = parse_presentation_sessions(rows, i)
+                programme.append(block)
+            elif event == "Plenary (VC Funding)" or looks_like_plenary_block(rows, i):
+                block, i = parse_plenary_block(rows, i)
                 programme.append(block)
             else:
                 block, i = parse_standard_event(rows, i)
