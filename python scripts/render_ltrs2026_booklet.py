@@ -1079,7 +1079,7 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
     border-left: 1px solid var(--border-grey);
     border-right: 1px solid var(--border-grey);
     background: {background_var};
-    padding: 3px 6px;
+    padding: 5px 6px;
   }}
   .track-row-header .track-cell {{
     border-top: 1px solid var(--border-grey);
@@ -1105,13 +1105,13 @@ def schedule_table_css(background_var: str = "var(--cream)") -> str:
   .track-room {{
     font-size: 12px;
     font-weight: 700;
-    margin-top: 1px;
+    margin-top: 2px;
   }}
   .track-chair {{
     display: block;
     font-size: 12px;
     font-style: italic;
-    margin-top: 1px;
+    margin-top: 3px;
   }}
   .talk-body {{
     border-top: 1px solid var(--border-grey);

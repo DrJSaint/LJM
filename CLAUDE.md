@@ -450,6 +450,29 @@ If Streamlit is missing in venv:
 5. Fold card is deliberately NOT wired into the Streamlit app ("Let's leave the card fold out of
    this now") — don't add it without being asked.
 
+## Session Log (2026-08-20, cont'd — restored track-cell breathing room)
+Same session. User spotted the Parallel Presentation Sessions track cells' text sitting right up
+against the dividing lines and correctly guessed this was fallout from the earlier
+spacing-tightening fix, asking to add some room back now that the second page had space to spare.
+
+- **Confirmed the real slack before touching anything, since the earlier `.a4-page.scrollHeight`
+  measurement was misleading here.** `min-height: 297mm` floors that container's measured height
+  regardless of how much shorter the actual content is, and on the back/continuation page the
+  footer's `margin-top: auto` silently absorbs any leftover space rather than leaving the
+  container visibly short — so both pages read exactly "297.1mm" whether they were genuinely full
+  or not. Measured the header+table+footer breakdown directly instead: back page's real content
+  was only ~256mm (41mm of slack), front page's ~272mm (25mm of slack) — confirming there was
+  genuine room on both sides, not just an appearance of it.
+- **`.track-cell` padding restored from `3px 6px` back to the original `5px 6px`**, plus
+  `.track-room`/`.track-chair` margins back to `2px`/`3px`. Confirmed first that `.track-cell` is
+  used *only* by Parallel Presentation Sessions (`render_track_grid()`) — Parallel Workshops
+  renders through a separate direct-row path with no track-cell involved at all, and Plenary uses
+  `.talk-list` instead — so this change is scoped to exactly the section the user pointed at, with
+  no effect on Parallel Workshops or Plenary spacing.
+- **Verified by re-rendering both pages and re-checking page count**, not just trusting the
+  numbers: still exactly 2 physical pages (both PDF variants), and the Parallel Presentation
+  Sessions block visibly has proper padding again with no text touching the cell borders.
+
 ## Session Log (2026-08-20, cont'd — renamed Plenary title stopped its talks rendering)
 Same session. User renamed the Excel cell "Plenary (VC Funding)" to "Showcasing our VC Funded
 Projects" and found the 8 talks underneath it disappeared from the rendered output entirely.
